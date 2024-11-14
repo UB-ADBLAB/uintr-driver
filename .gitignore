@@ -1,0 +1,23 @@
+# Generated kernel module files
+*.ko
+*.ko.cmd
+*.mod
+*.mod.c
+*.mod.o
+*.o
+*.o.cmd
+.tmp_versions/
+Module.symvers
+modules.order
+compile_commands.json
+.cache/
+
+# Build artifacts
+.*.cmd
+.*.d
+
+# Editor files
+*.swp
+.ccls-cache/
+
+
