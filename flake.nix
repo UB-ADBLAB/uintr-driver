@@ -87,7 +87,7 @@
           shellHook = ''
             echo "Setting up UINTR module development environment..."
             echo "Kernel version: $KERNELVERSION"
-            echo "Kernel build directory: $KERNEL_DIR"
+            echo "Kernel build directory: $KERNELDIR"
           '';
 
         };
