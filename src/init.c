@@ -1,6 +1,7 @@
 #include "arch/x86/uintr.h"
 #include "core.h"
 
+#include <asm/cpufeature.h>
 #include <asm/processor.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -24,6 +25,12 @@ static int check_cpu_compatibility(void) {
   if (c->x86 != SPR_FAMILY || c->x86_model != SPR_MODEL) {
     pr_err("UINTR: CPU is not Sapphire Rapids (Family: %d, Model: %x)\n",
            c->x86, c->x86_model);
+    return -EINVAL;
+  }
+
+  /* Verify UINTR support */
+  if (!cpu_have_feature(X86_FEATURE_UINTR)) {
+    pr_err("UINTR: CPU does not support user interrupts.");
     return -EINVAL;
   }
 
@@ -52,8 +59,9 @@ static void __exit uintr_exit(void) { pr_info("UINTR: Driver unloaded\n"); }
 module_init(uintr_init);
 module_exit(uintr_exit);
 
-/* 
- * TODO: These are required for the kernel module to build, arbitrary values for now.
+/*
+ * TODO: These are required for the kernel module to build, arbitrary values for
+ * now.
  */
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("UB-ADBLAB");
