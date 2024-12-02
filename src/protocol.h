@@ -3,10 +3,7 @@
 
 #include <linux/types.h>
 
-// TODO: These values should be calculated (?)
-// Intel SDM Vol. 2B 4-616
 #define UINTR_MAX_UVEC_NR 64
-#define UINTR_MAX_UITT_NR 256
 
 // UPID Notification control status bits
 #define UINTR_UPID_STATUS_ON 0x0
