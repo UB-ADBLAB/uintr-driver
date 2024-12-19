@@ -29,4 +29,9 @@ struct uintr_uitt_entry {
   u64 target_upid_addr;
 } __packed __aligned(16);
 
+struct uintr_uitt {
+    struct uintr_uitt_entry *entries;
+    unsigned int size;
+};
+
 #endif

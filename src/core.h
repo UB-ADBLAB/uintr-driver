@@ -43,4 +43,10 @@ struct uintr_file {
   spinlock_t file_lock;
 };
 
+struct uintr_uitt_manager {
+    struct uintr_uitt_entry *entries;
+    unsigned long *allocated_vectors;
+    spinlock_t lock;
+};
+
 #endif
