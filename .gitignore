@@ -19,5 +19,8 @@ compile_commands.json
 # Editor files
 *.swp
 .ccls-cache/
+.ccls
+.vscode/
 
-
+# Misc
+intel-uintr.patch
