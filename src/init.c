@@ -1,24 +1,34 @@
+#include "../include/uapi/linux/uintr.h"
 #include "arch/x86/uintr.h"
 #include "core.h"
+#include "fops.h"
+#include "proc.h"
+#include "protocol.h"
 
 #include <asm/cpufeature.h>
+#include <asm/fpu/xstate.h>
+#include <asm/io.h>
+#include <asm/msr.h>
+#include <asm/processor-flags.h>
 #include <asm/processor.h>
-#include <linux/fs.h> // can be removed with uintr_fops
+#include <asm/special_insns.h>
+#include <asm/tlbflush.h>
+
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/types.h>
 
+#ifndef X86_CR4_UINTR
+#define X86_CR4_UINTR (1ULL << 25)
+#endif
+
 static struct uintr_device *uintr_dev;
+static struct uintr_uitt_manager *uitt_mgr;
 
 u32 uintr_max_uitt_entries;
 u64 uintr_uitt_base_addr;
-
-// TODO: this is just temporary defined for compiling
-const struct file_operations uintr_fops = {
-    .owner = THIS_MODULE,
-};
 
 /*
  * check_cpu_compatibility - Verify CPU supports UINTR feature
@@ -43,25 +53,107 @@ static int check_cpu_compatibility(void) {
 
   /* Verify UINTR support */
   if (!cpu_have_feature(X86_FEATURE_UINTR)) {
-    pr_err("UINTR: CPU does not support user interrupts.");
+    pr_err("UINTR: CPU does not support user interrupts\n");
     return -EINVAL;
   }
 
   pr_info("UINTR: Compatible CPU detected (Family: %d, Model: %x)\n", c->x86,
           c->x86_model);
+  pr_info("UINTR: CR4: 0x%lx\n", __read_cr4());
 
   return 0;
 }
 
-static int uintr_uitt_init(void) {
-  u64 misc_msr;
+static int set_ia32_uintr_tt(u64 uintr_addr) {
+  u64 tt_msr_value;
 
-  /* Read UITT configuration from MSRs */
-  rdmsrl(MSR_IA32_UINTR_MISC, misc_msr);
-  uintr_max_uitt_entries = misc_msr & 0xFFFFFFFF; // UITTSZ in bits 31:0
+  // Shift the address to fit into bits 63:4
+  uintr_addr >>= 4;
 
-  rdmsrl(MSR_IA32_UINTR_TT, uintr_uitt_base_addr);
+  // Prepare the MSR value:
+  // - Bits 63:4 = shifted address
+  // - Bit 0 = 1 (SENDUIPI enable)
+  tt_msr_value = (uintr_addr & 0xFFFFFFFFFFFFFFF0) | 0x1;
 
+  // Write the value to the IA32_UINTR_TT MSR
+  wrmsrl(MSR_IA32_UINTR_TT, tt_msr_value);
+
+  pr_info(
+      "UINTR: Core %d - IA32_UINTR_TT MSR set to 0x%llx (UINTRADDR = 0x%llx)\n",
+      smp_processor_id(), tt_msr_value, uintr_addr << 4);
+
+  return 0;
+}
+
+static void set_cr4_uintr_bit(void) {
+  unsigned long cr4 = __read_cr4();
+  if (!(cr4 & X86_CR4_UINTR)) {
+    cr4_set_bits(X86_CR4_UINTR);
+    pr_info("UINTR: Core %d - CR4.UINTR bit enabled!\n", smp_processor_id());
+  }
+}
+
+static void configure_uintr_tt_on_core(void *info) {
+  u64 uintr_addr = (u64)info;
+
+  // Set MSRs and CR4
+  set_ia32_uintr_tt(uintr_addr);
+  set_cr4_uintr_bit();
+}
+
+static int setup_uitt(void) {
+  size_t uitt_size;
+  void *uitt_base;
+
+  // TODO: Fixed maximum entries for now, we'll have to calculate this later..
+  uintr_max_uitt_entries = 256;
+
+  // Calculate required size with alignment
+  uitt_size = uintr_max_uitt_entries * sizeof(struct uintr_uitt_entry);
+
+  // Allocate aligned memory for UITT
+  uitt_base = kzalloc(uitt_size, GFP_KERNEL);
+  if (!uitt_base) {
+    pr_err("UINTR: Failed to allocate UITT\n");
+    return -ENOMEM;
+  }
+
+  // Store physical address for MSR
+  uintr_uitt_base_addr = virt_to_phys(uitt_base);
+
+  // Check alignment
+  if (uintr_uitt_base_addr & 0xFFF) {
+    pr_err("UINTR: UITT base address is not 4 KB aligned\n");
+    kfree(uitt_base);
+    return -EINVAL;
+  }
+
+  pr_info("UINTR: UITT initialized at physical address 0x%llx\n",
+          uintr_uitt_base_addr);
+
+  // Configure IA32_UINTR_TT MSR on all cores
+  // TODO: investigate if more caution is required here..
+  on_each_cpu(configure_uintr_tt_on_core, (void *)uintr_uitt_base_addr, 1);
+  smp_mb(); // Ensure all cores complete configuration
+
+  uitt_mgr = kzalloc(sizeof(*uitt_mgr), GFP_KERNEL);
+  if (!uitt_mgr) {
+    kfree(uitt_base);
+    return -ENOMEM;
+  }
+
+  uitt_mgr->entries = uitt_base;
+  uitt_mgr->allocated_vectors =
+      kzalloc(BITS_TO_LONGS(uintr_max_uitt_entries) * sizeof(long), GFP_KERNEL);
+  if (!uitt_mgr->allocated_vectors) {
+    kfree(uitt_base);
+    kfree(uitt_mgr);
+    return -ENOMEM;
+  }
+
+  spin_lock_init(&uitt_mgr->lock);
+
+  pr_info("UINTR: UITT setup completed successfully\n");
   return 0;
 }
 
@@ -76,9 +168,9 @@ static int __init uintr_init(void) {
   if (ret < 0)
     return ret;
 
-  ret = uintr_uitt_init();
+  ret = setup_uitt();
   if (ret < 0)
-    return ret; // currently only returns 0 so should never happen
+    return ret;
 
   uintr_dev = kzalloc(sizeof(*uintr_dev), GFP_KERNEL);
   if (!uintr_dev)
@@ -105,18 +197,36 @@ static int __init uintr_init(void) {
 }
 
 static void __exit uintr_exit(void) {
-  misc_deregister(&uintr_dev->misc);
-  kfree(uintr_dev);
+  // TODO: Currently causes a #GP
+  uintr_clear_state();
+
+  if (uitt_mgr) {
+    if (uitt_mgr->entries) {
+      kfree(uitt_mgr->entries);
+    }
+    if (uitt_mgr->allocated_vectors) {
+      kfree(uitt_mgr->allocated_vectors);
+    }
+    kfree(uitt_mgr);
+  }
+
+  wrmsrl(MSR_IA32_UINTR_TT, 0);
+
+  if (uintr_dev) {
+    misc_deregister(&uintr_dev->misc);
+    kfree(uintr_dev);
+  }
+  if (uitt_mgr) {
+    kfree(uitt_mgr->allocated_vectors);
+    kfree(uitt_mgr->entries);
+    kfree(uitt_mgr);
+  }
   pr_info("UINTR: Driver unloaded\n");
 }
 
 module_init(uintr_init);
 module_exit(uintr_exit);
 
-/*
- * TODO: These are required for the kernel module to build, arbitrary values for
- * now.
- */
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("UB-ADBLAB");
 
