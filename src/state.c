@@ -1,5 +1,8 @@
 #include "state.h"
 #include "core.h"
+#include "proc.h"
+
+#include <asm/io.h>
 #include <asm/msr.h>
 #include <asm/processor.h>
 #include <linux/mm.h>
@@ -46,16 +49,18 @@ int uintr_init_state(struct uintr_process_ctx *ctx) {
   INIT_LIST_HEAD(&ctx->vectors);
   spin_lock_init(&ctx->ctx_lock);
 
-  /* TODO: Allocate UPID */
+  // Allocate UPID
+  ctx->upid = kzalloc(sizeof(struct uintr_upid), GFP_KERNEL);
+  if (!ctx->upid)
+    return -ENOMEM;
+
+  // Initialize UPID
+  ctx->upid->nc.status = UINTR_UPID_STATUS_ON;
+  ctx->upid->puir = 0;
 
   ctx->handler_active = 0;
   ctx->handler = NULL;
   memset(&ctx->state, 0, sizeof(struct uintr_state));
 
   return 0;
-}
-
-int uintr_setup_sender(struct uintr_uitt *uitt) {
-  if (!uitt)
-    return -EINVAL;
 }
