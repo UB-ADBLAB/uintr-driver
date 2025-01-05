@@ -4,20 +4,20 @@
 #include <linux/types.h>
 
 struct uintr_handler_args {
-    void *handler;
-    void *stack;
-    size_t stack_size;
-    unsigned int flags;
+  void *handler;
+  void *stack;
+  size_t stack_size;
+  unsigned int flags;
 };
 
 struct uintr_vector_args {
-    unsigned int vector;
-    unsigned int flags;
+  unsigned int vector;
+  unsigned int flags;
 };
 
 struct uintr_wait_args {
-    unsigned long timeout_us;
-    unsigned int flags;
+  unsigned long timeout_us;
+  unsigned int flags;
 };
 
 struct __uintr_frame {
@@ -31,13 +31,14 @@ struct __uintr_frame {
 
 #define UINTR_REGISTER_HANDLER _IOW('u', 0, struct uintr_handler_args)
 #define UINTR_UNREGISTER_HANDLER _IO('u', 1)
-#define UINTR_CREATE_FD _IOW('u', 2, struct uintr_vector_args) 
+#define UINTR_CREATE_FD _IOW('u', 2, struct uintr_vector_args)
 #define UINTR_WAIT _IOW('u', 3, struct uintr_wait_args)
 
 #ifndef __ASSEMBLY__
 
 /*
- * the following intrinsics map directly to the instructions specified in the Intel SDM Vol. 2B 4-616.
+ * the following intrinsics map directly to the instructions specified in the
+ * Intel SDM Vol. 2B 4-616.
  */
 
 /* Set User Interrupt Flag - enables user interrupts */
@@ -57,7 +58,8 @@ static __always_inline unsigned char _testui(void) {
   return cf;
 }
 
-/* Send User Interrupt - sends a user interrupt to the index set in the register */
+/* Send User Interrupt - sends a user interrupt to the index set in the register
+ */
 static __always_inline void _senduipi(unsigned long uipi_index) {
   __asm__ __volatile__("senduipi %0" : : "r"(uipi_index) : "memory");
 }
