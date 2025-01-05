@@ -1,5 +1,5 @@
 obj-m := intel-uintr.o
-intel-uintr-objs := src/init.o
+intel-uintr-objs := src/init.o src/fops.o src/state.o src/proc.o
 
 KERNELDIR ?= /lib/modules/$(shell uname -r)/build/
 PWD := $(shell pwd)
@@ -9,5 +9,3 @@ all:
 
 clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
-
-
