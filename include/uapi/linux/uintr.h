@@ -1,6 +1,8 @@
 #ifndef _UAPI_ASM_X86_UINTR_H
 #define _UAPI_ASM_X86_UINTR_H
 
+#include <linux/types.h>
+
 struct uintr_handler_args {
     void *handler;
     void *stack;
