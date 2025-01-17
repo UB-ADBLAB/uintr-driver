@@ -4,6 +4,7 @@
 #include "fops.h"
 #include "proc.h"
 #include "protocol.h"
+#include "uitt.h"
 
 #include <asm/cpufeature.h>
 #include <asm/fpu/xstate.h>
@@ -101,62 +102,6 @@ static void configure_uintr_tt_on_core(void *info) {
   set_cr4_uintr_bit();
 }
 
-static int setup_uitt(void) {
-  size_t uitt_size;
-  void *uitt_base;
-
-  // TODO: Fixed maximum entries for now, we'll have to calculate this later..
-  uintr_max_uitt_entries = 256;
-
-  // Calculate required size with alignment
-  uitt_size = uintr_max_uitt_entries * sizeof(struct uintr_uitt_entry);
-
-  // Allocate aligned memory for UITT
-  uitt_base = kzalloc(uitt_size, GFP_KERNEL);
-  if (!uitt_base) {
-    pr_err("UINTR: Failed to allocate UITT\n");
-    return -ENOMEM;
-  }
-
-  // Store physical address for MSR
-  uintr_uitt_base_addr = virt_to_phys(uitt_base);
-
-  // Check alignment
-  if (uintr_uitt_base_addr & 0xFFF) {
-    pr_err("UINTR: UITT base address is not 4 KB aligned\n");
-    kfree(uitt_base);
-    return -EINVAL;
-  }
-
-  pr_info("UINTR: UITT initialized at physical address 0x%llx\n",
-          uintr_uitt_base_addr);
-
-  // Configure IA32_UINTR_TT MSR on all cores
-  // TODO: investigate if more caution is required here..
-  on_each_cpu(configure_uintr_tt_on_core, (void *)uintr_uitt_base_addr, 1);
-  smp_mb(); // Ensure all cores complete configuration
-
-  uitt_mgr = kzalloc(sizeof(*uitt_mgr), GFP_KERNEL);
-  if (!uitt_mgr) {
-    kfree(uitt_base);
-    return -ENOMEM;
-  }
-
-  uitt_mgr->entries = uitt_base;
-  uitt_mgr->allocated_vectors =
-      kzalloc(BITS_TO_LONGS(uintr_max_uitt_entries) * sizeof(long), GFP_KERNEL);
-  if (!uitt_mgr->allocated_vectors) {
-    kfree(uitt_base);
-    kfree(uitt_mgr);
-    return -ENOMEM;
-  }
-
-  spin_lock_init(&uitt_mgr->lock);
-
-  pr_info("UINTR: UITT setup completed successfully\n");
-  return 0;
-}
-
 static int __init uintr_init(void) {
   int ret;
 
@@ -168,7 +113,7 @@ static int __init uintr_init(void) {
   if (ret < 0)
     return ret;
 
-  ret = setup_uitt();
+  ret = uitt_init();
   if (ret < 0)
     return ret;
 

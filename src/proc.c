@@ -111,10 +111,8 @@ void uintr_vector_free(struct uintr_vector_ctx *vec) {
     return;
 
   if (vec->uitte) {
-    // Clear UITT entry
-    vec->uitte->valid = 0;
-    vec->uitte->user_vec = 0;
-    vec->uitte->target_upid_addr = 0;
+    uitt_free_entry(vec->vector);
+    kfree(vec->uitte);
   }
 
   kfree(vec);
