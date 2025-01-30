@@ -22,10 +22,6 @@
 #include <linux/slab.h>
 #include <linux/types.h>
 
-#ifndef X86_CR4_UINTR
-#define X86_CR4_UINTR (1ULL << 25)
-#endif
-
 static struct uintr_device *uintr_dev;
 static struct uintr_uitt_manager *uitt_mgr;
 
@@ -120,8 +116,11 @@ static void __exit uintr_exit(void) {
   uintr_clear_state();
 
   if (uitt_mgr) {
-    if (uitt_mgr->entries) {
-      kfree(uitt_mgr->entries);
+    if (uitt_mgr->uitt) {
+      if (uitt_mgr->uitt->entries) {
+        kfree(uitt_mgr->uitt->entries);
+      }
+      kfree(uitt_mgr->uitt);
     }
     if (uitt_mgr->allocated_vectors) {
       kfree(uitt_mgr->allocated_vectors);
@@ -133,13 +132,10 @@ static void __exit uintr_exit(void) {
 
   if (uintr_dev) {
     misc_deregister(&uintr_dev->misc);
+    mutex_destroy(&uintr_dev->dev_mutex);
     kfree(uintr_dev);
   }
-  if (uitt_mgr) {
-    kfree(uitt_mgr->allocated_vectors);
-    kfree(uitt_mgr->entries);
-    kfree(uitt_mgr);
-  }
+
   pr_info("UINTR: Driver unloaded\n");
 }
 
