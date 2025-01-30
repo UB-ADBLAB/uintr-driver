@@ -4,8 +4,7 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 
-// Global UITT manager defined in core.h
-extern struct uintr_uitt_manager *uitt_mgr;
+struct uintr_uitt_manager *uitt_mgr = NULL;
 extern u32 uintr_max_uitt_entries;
 extern u64 uintr_uitt_base_addr;
 
