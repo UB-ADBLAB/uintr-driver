@@ -7,6 +7,7 @@
 #include <linux/mutex.h>
 #include <linux/spinlock.h>
 
+#include "protocol.h"
 #include "state.h"
 
 // Driver Version
@@ -24,7 +25,14 @@
 #define MSR_IA32_UINTR_PD 0x989
 #define MSR_IA32_UINTR_TT 0x98a
 
+#define UINTR_NOTIFICATION_VECTOR 0xec
+#define UINTR_KERNEL_VECTOR 0xeb
+
 #define X86_FEATURE_UINTR (18 * 32 + 5) /* User Interrupts support */
+
+#ifndef X86_CR4_UINTR
+#define X86_CR4_UINTR (1ULL << 25)
+#endif
 
 /* UITT configuration -- needs to be initalized during driver set up */
 extern u32 uintr_max_uitt_entries;
@@ -44,9 +52,9 @@ struct uintr_file {
 };
 
 struct uintr_uitt_manager {
-    struct uintr_uitt_entry *entries;
-    unsigned long *allocated_vectors;
-    spinlock_t lock;
+  struct uintr_uitt *uitt;
+  DECLARE_BITMAP(allocated_vectors, UINTR_MAX_UVEC_NR);
+  spinlock_t lock;
 };
 
 #endif

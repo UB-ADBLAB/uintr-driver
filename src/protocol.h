@@ -17,7 +17,7 @@ struct uintr_upid {
     u8 reserved1;
     u8 nv;
     u8 reserved2;
-    u32 ndst;
+    u32 ndst; // refers to the physical destination to send this interrupt
   } __packed nc;
   u64 puir;
 } __aligned(64);
@@ -30,8 +30,8 @@ struct uintr_uitt_entry {
 } __packed __aligned(16);
 
 struct uintr_uitt {
-    struct uintr_uitt_entry *entries;
-    unsigned int size;
+  struct uintr_uitt_entry *entries;
+  unsigned int size;
 };
 
 #endif

@@ -2,74 +2,59 @@
 #include "../include/uapi/linux/uintr.h"
 #include "core.h"
 #include "proc.h"
+#include "uitt.h"
+#include <asm/io.h>
 #include <linux/slab.h>
 
-int register_handler(struct file *file, struct uintr_device *uintr_dev,
-                     void __user *arg) {
+#define OS_ABI_REDZONE 128
+
+struct uintr_process_ctx *register_handler(struct file *file,
+                                           struct uintr_device *uintr_dev,
+                                           void __user *arg) {
   struct uintr_handler_args handler_args;
-  struct uintr_file *ufile;
   struct uintr_process_ctx *proc;
   u64 handler_addr, stack_addr;
-  int ret = 0;
 
   if (copy_from_user(&handler_args, arg, sizeof(handler_args)))
-    return -EFAULT;
+    return ERR_PTR(-EFAULT);
 
   if (!handler_args.handler)
-    return -EINVAL;
-
-  // If stack specified, validate stack parameters
-  if (handler_args.stack) {
-    if (!handler_args.stack_size || handler_args.stack_size < PAGE_SIZE)
-      return -EINVAL;
-    stack_addr = (u64)handler_args.stack + handler_args.stack_size;
-  } else {
-    stack_addr = 0; // Use default kernel stack
-  }
-
-  ufile = kzalloc(sizeof(*ufile), GFP_KERNEL);
-  if (!ufile)
-    return -ENOMEM;
+    return ERR_PTR(-EINVAL);
 
   // Create process context
   proc = uintr_proc_create(current);
-  if (!proc) {
-    ret = -ENOMEM;
-    goto err_free_ufile;
+  if (!proc)
+    return ERR_PTR(-ENOMEM);
+
+  // Set up stack address
+  if (handler_args.stack) {
+    if (!handler_args.stack_size || handler_args.stack_size < PAGE_SIZE) {
+      uintr_proc_destroy(proc);
+      return ERR_PTR(-EINVAL);
+    }
+    stack_addr = (u64)handler_args.stack + handler_args.stack_size;
+  } else {
+    stack_addr = OS_ABI_REDZONE;
   }
 
-  ufile->proc->handler = handler_args.handler;
-  wrmsrl(MSR_IA32_UINTR_PD, virt_to_phys(ufile->proc->upid));
-  wrmsrl(MSR_IA32_UINTR_HANDLER, (u64)handler_args.handler);
-
+  // Store handler
   proc->handler = handler_args.handler;
-  ufile->proc = proc;
 
-  // Initialize file structure
-  spin_lock_init(&ufile->file_lock);
-  ufile->uintr_dev = uintr_dev;
-  file->private_data = ufile;
+  // Store process context directly in file
+  file->private_data = proc;
 
-  // Convert user virtual address to physical for MSR
-  handler_addr = (u64)handler_args.handler;
-
-  // Program MSRs for this CPU
   preempt_disable();
 
-  // Set handler address
-  wrmsrl(MSR_IA32_UINTR_HANDLER, handler_addr);
+  if (!proc->upid) {
+    preempt_enable();
+    uintr_proc_destroy(proc);
+    return ERR_PTR(-EINVAL);
+  }
 
-  // Set stack adjustment if custom stack provided
-  if (stack_addr)
-    wrmsrl(MSR_IA32_UINTR_STACKADJUST, stack_addr);
-
-  // Set UPID physical address
-  wrmsrl(MSR_IA32_UINTR_PD, virt_to_phys(proc->upid));
-
-  // Initialize MISC MSR:
-  // - UITT size (8 bits for 256 entries)
-  // - Clear UINV (user interrupt notification valid)
-  // - Clear UIF (user interrupt flag)
+  // Configure MSRs
+  wrmsrl(MSR_IA32_UINTR_HANDLER, (u64)handler_args.handler);
+  wrmsrl(MSR_IA32_UINTR_STACKADJUST, stack_addr);
+  wrmsrl(MSR_IA32_UINTR_PD, proc->upid); // virt_to_phys?
   wrmsrl(MSR_IA32_UINTR_MISC, (u64)8 << 32);
 
   // Save initial state
@@ -78,11 +63,7 @@ int register_handler(struct file *file, struct uintr_device *uintr_dev,
 
   preempt_enable();
 
-  return 0;
-
-err_free_ufile:
-  kfree(ufile);
-  return ret;
+  return proc;
 }
 
 int create_vector(struct file *file, struct uintr_device *uintr_dev,
@@ -98,7 +79,9 @@ int create_vector(struct file *file, struct uintr_device *uintr_dev,
   if (!ufile || !ufile->proc)
     return -EINVAL;
 
-  ret = uintr_vector_create(ufile->proc, vector_args.vector);
+  // TODO: I have chosen to simplify the process of creating vectors, so we'll
+  // have to come back to this.
+  ret = 0; // uintr_vector_create(ufile->proc, vector_args.vector);
   if (ret < 0)
     return ret;
 
@@ -128,9 +111,12 @@ long uintr_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
 
   switch (cmd) {
   case UINTR_REGISTER_HANDLER:
-    ret = register_handler(file, uintr_dev, (void __user *)arg);
+    struct uintr_process_ctx *ctx =
+        register_handler(file, uintr_dev, (void __user *)arg);
+    ret = uitt_alloc_entry(ctx);
     break;
   case UINTR_CREATE_FD:
+    pr_info("UINTR: IOCTL reached.");
     ret = create_vector(file, uintr_dev, (void __user *)arg);
     break;
   case UINTR_UNREGISTER_HANDLER:
@@ -153,13 +139,10 @@ int uintr_open(struct inode *inode, struct file *file) {
 }
 
 int uintr_release(struct inode *inode, struct file *file) {
-  struct uintr_file *ufile = file->private_data;
+  struct uintr_process_ctx *proc = file->private_data;
 
-  if (ufile) {
-    if (ufile->proc) {
-      uintr_proc_destroy(ufile->proc);
-    }
-    kfree(ufile);
+  if (proc) {
+    uintr_proc_destroy(proc);
     file->private_data = NULL;
   }
 

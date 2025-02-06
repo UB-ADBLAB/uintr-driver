@@ -1,20 +1,60 @@
 #include "proc.h"
 #include "core.h"
 #include "state.h"
+#include "uitt.h"
+#include <asm/apic.h>
 #include <asm/io.h>
+/*#include <linux/hashtable.h>*/
 #include <linux/slab.h>
+#include <linux/spinlock.h>
+
+/*#define UINTR_PROC_HASH_BITS 6 // 2^6 = 64 buckets*/
+
+/*static DEFINE_HASHTABLE(proc_ctx_hash, UINTR_PROC_HASH_BITS);*/
+/*static DEFINE_SPINLOCK(proc_ctx_lock);*/
+
+/*static struct uintr_process_ctx *find_proc_ctx(pid_t pid) {*/
+/*  struct uintr_process_ctx *ctx;*/
+/**/
+/*  rcu_read_lock();*/
+/*  hash_for_each_possible_rcu(proc_ctx_hash, ctx, hash_node, pid) {*/
+/*    if (ctx->pid == pid) {*/
+/*      rcu_read_unlock();*/
+/*      return ctx;*/
+/*    }*/
+/*  }*/
+/*  rcu_read_unlock();*/
+/*  return NULL;*/
+/*}*/
+
+/*static int add_proc_ctx(struct uintr_process_ctx *ctx) {*/
+/*  spin_lock(&proc_ctx_lock);*/
+/*  hash_add_rcu(proc_ctx_hash, &ctx->hash_node, ctx->pid);*/
+/*  spin_unlock(&proc_ctx_lock);*/
+/*  return 0;*/
+/*}*/
+/**/
+/*static void remove_proc_ctx(struct uintr_process_ctx *ctx) {*/
+/*  spin_lock(&proc_ctx_lock);*/
+/*  hash_del_rcu(&ctx->hash_node);*/
+/*  spin_unlock(&proc_ctx_lock);*/
+/*  synchronize_rcu();*/
+/*}*/
 
 struct uintr_process_ctx *uintr_proc_create(struct task_struct *task) {
   struct uintr_process_ctx *ctx;
   int ret;
 
-  if (!task)
+  if (!task) {
+    pr_err("UINTR: Tried to create process context where task is NULL!");
     return NULL;
+  }
 
   ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
-  if (!ctx)
+  if (!ctx) {
+    pr_err("UINTR: Failed to allocate memory for process context!");
     return NULL;
-
+  }
   ctx->task = task;
 
   ret = uintr_init_state(ctx);
@@ -32,12 +72,6 @@ void uintr_proc_destroy(struct uintr_process_ctx *ctx) {
   if (!ctx)
     return;
 
-  // Free all allocated vectors
-  list_for_each_entry_safe(vec, tmp, &ctx->vectors, node) {
-    list_del(&vec->node);
-    uintr_vector_free(vec);
-  }
-
   // Clear CPU state
   uintr_clear_state();
 
@@ -49,71 +83,36 @@ void uintr_proc_destroy(struct uintr_process_ctx *ctx) {
   kfree(ctx);
 }
 
-int uintr_alloc_vector(struct uintr_process_ctx *ctx,
-                       struct uintr_vector_ctx *vec) {
-  if (!ctx || !vec || vec->vector >= UINTR_MAX_UVEC_NR)
-    return -EINVAL;
-
-  // Allocate and initialize UITT entry
-  vec->uitte = kzalloc(sizeof(struct uintr_uitt_entry), GFP_KERNEL);
-  if (!vec->uitte)
-    return -ENOMEM;
-
-  vec->uitte->valid = 1;
-  vec->uitte->user_vec = vec->vector;
-  vec->uitte->target_upid_addr = virt_to_phys(ctx->upid);
-
-  return 0;
-}
-
-int uintr_vector_create(struct uintr_process_ctx *proc, __u32 vector) {
-  struct uintr_vector_ctx *vec_ctx;
-  int ret;
-
-  if (!proc || vector >= UINTR_MAX_UVEC_NR)
-    return -EINVAL;
-
-  // Check if vector is already allocated
-  spin_lock(&proc->ctx_lock);
-  list_for_each_entry(vec_ctx, &proc->vectors, node) {
-    if (vec_ctx->vector == vector) {
-      spin_unlock(&proc->ctx_lock);
-      return -EEXIST;
-    }
-  }
-  spin_unlock(&proc->ctx_lock);
-
-  // Allocate vector context
-  vec_ctx = kzalloc(sizeof(*vec_ctx), GFP_KERNEL);
-  if (!vec_ctx)
-    return -ENOMEM;
-
-  vec_ctx->vector = vector;
-  vec_ctx->proc = proc;
-
-  // Allocate UITT entry
-  ret = uintr_alloc_vector(proc, vec_ctx);
-  if (ret < 0) {
-    kfree(vec_ctx);
-    return ret;
-  }
-
-  // Add to process vector list
-  spin_lock(&proc->ctx_lock);
-  list_add(&vec_ctx->node, &proc->vectors);
-  spin_unlock(&proc->ctx_lock);
-
-  return 0;
-}
-
-void uintr_vector_free(struct uintr_vector_ctx *vec) {
-  if (!vec)
-    return;
-
-  if (vec->uitte) {
-    uitt_free_entry(vec->vector);
-    kfree(vec->uitte);
-  }
-
-  kfree(vec);
-}
+/*static void __trace_sched_migrate_task(void *data, struct task_struct *p,*/
+/*                                       int dest_cpu) {*/
+/**/
+/*  struct uintr_process_ctx *proc_ctx;*/
+/**/
+/*  ctx = find_proc_ctx(p->pid);*/
+/*  if (!ctx)*/
+/*    return;*/
+/**/
+/*  proc_ctx->upid->nc.ndst = cpu_physical_id(dest_cpu);*/
+/**/
+/*  pr_info("UINTR: Process %d migrated to CPU %d (APIC ID: %u)\n", task->pid,*/
+/*          dest_cpu, proc_ctx->upid->nc.ndst);*/
+/*}*/
+/**/
+/*static int init_sched_migrate_tracepoint(void) {*/
+/*  int ret;*/
+/**/
+/*  ret = tracepoint_probe_register("sched_migrate_task",*/
+/*                                  __trace_sched_migrate_task, NULL);*/
+/*  if (ret) {*/
+/*    pr_err("UINTR: Failed to register sched_migrate_task tracepoint\n");*/
+/*    return ret;*/
+/*  }*/
+/**/
+/*  return 0;*/
+/*}*/
+/**/
+/*static void cleanup_sched_migrate_tracepoint(void) {*/
+/*  tracepoint_probe_unregister("sched_migrate_task",
+ * __trace_sched_migrate_task,*/
+/*                              NULL);*/
+/*}*/

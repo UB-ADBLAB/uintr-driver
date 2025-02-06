@@ -2,7 +2,6 @@
 #define _UAPI_ASM_X86_UINTR_H
 
 #include <linux/types.h>
-#include <stddef.h>
 
 struct uintr_handler_args {
   void *handler;
