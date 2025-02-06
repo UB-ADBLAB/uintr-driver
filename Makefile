@@ -9,3 +9,6 @@ all:
 
 clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
+
+test_simpl:
+	gcc -mgeneral-regs-only -pthread tests/simplified_pinned.c -o simplified_pinned
