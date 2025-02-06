@@ -25,13 +25,17 @@ void __attribute__((interrupt)) test_handler(struct __uintr_frame *ui_frame,
 
 void *sender_thread(void *arg) {
   int uipi_index = *(int *)arg;
+  int cpu;
+
+  cpu = sched_getcpu();
+
+  printf("Sender thread initialize on thread: %d\n", cpu);
 
   sleep(1);
 
-  /* may need to sleep for a second here until receiver is ready... */
-  printf("\n\nSending user interrupt...\n\n");
+  printf("Sending user interrupt...\n");
   _senduipi(uipi_index);
-  printf("\n\nUser interrupt sent...\n\n");
+  printf("User interrupt sent...\n");
 
   return NULL;
 }
@@ -77,9 +81,9 @@ int main(void) {
 
   printf("Waiting for interrupt...\n");
   while (!interrupt_received) {
-    cpu = sched_getcpu();
-    printf("\rsimplified_pinned is currently on thread: %d", cpu);
-    fflush(stdout);
+    /*cpu = sched_getcpu();*/
+    /*printf("\rsimplified_pinned is currently on thread: %d", cpu);*/
+    /*fflush(stdout);*/
   }
   printf("User interrupt received!\n");
 
