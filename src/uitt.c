@@ -71,6 +71,7 @@ void uitt_cleanup(void) {
 }
 
 int uitt_alloc_entry(struct uintr_process_ctx *proc) {
+  struct uintr_uitt_entry *entry;
   unsigned long flags;
   int vector;
 
@@ -86,10 +87,10 @@ int uitt_alloc_entry(struct uintr_process_ctx *proc) {
     return -ENOSPC;
   }
 
-  struct uintr_uitt_entry *entry = &uitt_mgr->uitt->entries[vector];
+  entry = &uitt_mgr->uitt->entries[vector];
   entry->valid = 1;
   entry->user_vec = vector;
-  entry->target_upid_addr = proc->upid; // virt_to_phys(proc->upid)?;
+  entry->target_upid_addr = (u64)proc->upid; // virt_to_phys(proc->upid)?;
 
   set_bit(vector, uitt_mgr->allocated_vectors);
 

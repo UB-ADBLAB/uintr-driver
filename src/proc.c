@@ -67,8 +67,6 @@ struct uintr_process_ctx *uintr_proc_create(struct task_struct *task) {
 }
 
 void uintr_proc_destroy(struct uintr_process_ctx *ctx) {
-  struct uintr_vector_ctx *vec, *tmp;
-
   if (!ctx)
     return;
 

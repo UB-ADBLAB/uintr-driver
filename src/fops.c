@@ -13,7 +13,7 @@ struct uintr_process_ctx *register_handler(struct file *file,
                                            void __user *arg) {
   struct uintr_handler_args handler_args;
   struct uintr_process_ctx *proc;
-  u64 handler_addr, stack_addr;
+  u64 stack_addr;
 
   if (copy_from_user(&handler_args, arg, sizeof(handler_args)))
     return ERR_PTR(-EFAULT);
@@ -54,7 +54,7 @@ struct uintr_process_ctx *register_handler(struct file *file,
   // Configure MSRs
   wrmsrl(MSR_IA32_UINTR_HANDLER, (u64)handler_args.handler);
   wrmsrl(MSR_IA32_UINTR_STACKADJUST, stack_addr);
-  wrmsrl(MSR_IA32_UINTR_PD, proc->upid); // virt_to_phys?
+  wrmsrl(MSR_IA32_UINTR_PD, (u64)proc->upid); // virt_to_phys?
   wrmsrl(MSR_IA32_UINTR_MISC, (u64)8 << 32);
 
   // Save initial state
