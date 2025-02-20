@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <sched.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,11 +15,31 @@ static int uintr_fd = -1;
 
 /* volatile because value will change when interrupted */
 static volatile int interrupt_received = 0;
+static volatile sig_atomic_t keep_running = 1;
+
+static void cleanup(void) {
+  printf("\nCleaning up...\n");
+
+  /* Disable interrupts before cleanup */
+  _clui();
+
+  if (uintr_fd >= 0) {
+    printf("Unregistering handler...\n");
+    ioctl(uintr_fd, UINTR_UNREGISTER_HANDLER);
+    close(uintr_fd);
+    uintr_fd = -1;
+  }
+}
 
 /* Handler for user interrupts */
 void __attribute__((interrupt)) test_handler(struct __uintr_frame *ui_frame,
                                              unsigned long long vector) {
   interrupt_received = 1;
+}
+
+static void sigint_handler(int signum) {
+  printf("\nCaught signal %d\n", signum);
+  keep_running = 0;
 }
 
 /* Helper function to set thread affinity */
@@ -45,9 +66,9 @@ void *sender_thread(void *arg) {
   }
 
   int cpu = sched_getcpu();
-  printf("Sender thread initialized on core: %d\n", cpu);
+  printf("Sender thread initialized on core: %d \n", cpu);
 
-  sleep(1);
+  sleep(3);
   printf("Sending user interrupt...\n");
   _senduipi(uipi_index);
   printf("User interrupt sent...\n");
@@ -59,6 +80,13 @@ int main(void) {
   int ret;
   pthread_t sender_tid;
   int cpu;
+  struct sigaction act;
+
+  memset(&act, 0, sizeof(act));
+  act.sa_handler = sigint_handler;
+  sigaction(SIGINT, &act, NULL);
+
+  atexit(cleanup);
 
   // Set main thread affinity to core 0
   if (set_thread_affinity(pthread_self(), 0) != 0) {
@@ -85,7 +113,14 @@ int main(void) {
   printf("Got assigned index %d from registering handler.\n", uipi_index);
 
   // Enable user interrupts
+  printf("Current UIF before stui: %u\n", _testui());
   _stui();
+  if (!_testui()) {
+    printf("[ERROR] UIF not set after _stui()!\n");
+    cleanup();
+    return EXIT_FAILURE;
+  }
+  printf("UIF set successfully. UIF after stui: %u\n", _testui());
 
   ret = pthread_create(&sender_tid, NULL, sender_thread, &uipi_index);
   if (ret != 0) {
@@ -97,7 +132,12 @@ int main(void) {
   printf("Main thread running on core: %d\n", cpu);
   printf("Waiting for interrupt...\n");
 
-  while (!interrupt_received) {
+  while (!interrupt_received && keep_running) {
+  }
+
+  if (!keep_running) {
+    printf("Interrupted by user\n");
+    return EXIT_SUCCESS;
   }
 
   printf("User interrupt received!\n");

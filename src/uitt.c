@@ -98,6 +98,7 @@ int uitt_alloc_entry(struct uintr_process_ctx *proc) {
   pr_info("UINTR: Allocated UITT entry %d for process %d\n", vector,
           proc->task->pid);
 
+  uintr_dump_upid_state(proc->upid, "uitt_alloc");
   return vector;
 }
 

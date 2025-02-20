@@ -25,9 +25,6 @@
 #define MSR_IA32_UINTR_PD 0x989
 #define MSR_IA32_UINTR_TT 0x98a
 
-#define UINTR_NOTIFICATION_VECTOR 0xec
-#define UINTR_KERNEL_VECTOR 0xeb
-
 #define X86_FEATURE_UINTR (18 * 32 + 5) /* User Interrupts support */
 
 #ifndef X86_CR4_UINTR
@@ -43,6 +40,8 @@ struct uintr_device {
   struct miscdevice misc;
   struct device *dev;
   struct mutex dev_mutex;
+  int irq_user_vec;
+  int irq_kern_vec;
 };
 
 struct uintr_file {

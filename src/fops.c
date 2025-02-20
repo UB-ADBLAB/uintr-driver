@@ -1,9 +1,11 @@
 #include "fops.h"
 #include "../include/uapi/linux/uintr.h"
 #include "core.h"
+#include "logging/monitor.h"
 #include "proc.h"
 #include "uitt.h"
 #include <asm/io.h>
+#include <linux/kthread.h>
 #include <linux/slab.h>
 
 #define OS_ABI_REDZONE 128
@@ -14,6 +16,7 @@ struct uintr_process_ctx *register_handler(struct file *file,
   struct uintr_handler_args handler_args;
   struct uintr_process_ctx *proc;
   u64 stack_addr;
+  int cpu;
 
   if (copy_from_user(&handler_args, arg, sizeof(handler_args)))
     return ERR_PTR(-EFAULT);
@@ -37,6 +40,13 @@ struct uintr_process_ctx *register_handler(struct file *file,
     stack_addr = OS_ABI_REDZONE;
   }
 
+  atomic_set(&monitor_should_exit, 0);
+  monitor_task = kthread_run(upid_monitor_thread, proc, "uintr_monitor");
+  if (IS_ERR(monitor_task)) {
+    pr_err("UINTR: Failed to create monitor thread\n");
+    monitor_task = NULL;
+  }
+
   // Store handler
   proc->handler = handler_args.handler;
 
@@ -52,14 +62,22 @@ struct uintr_process_ctx *register_handler(struct file *file,
   }
 
   // Configure MSRs
+
+  cpu = smp_processor_id();
   wrmsrl(MSR_IA32_UINTR_HANDLER, (u64)handler_args.handler);
   wrmsrl(MSR_IA32_UINTR_STACKADJUST, stack_addr);
   wrmsrl(MSR_IA32_UINTR_PD, (u64)proc->upid); // virt_to_phys?
   wrmsrl(MSR_IA32_UINTR_MISC, (u64)8 << 32);
 
-  // Save initial state
-  uintr_save_state(&proc->state);
-  proc->handler_active = true;
+  pr_info("UINTR: Registered handler on CPU %d, handler address %lld", cpu,
+          (u64)handler_args.handler);
+
+  if (cpu_physical_id(cpu) != proc->upid->nc.ndst)
+
+    // Save initial state
+    proc->handler_active = true;
+
+  uintr_dump_upid_state(proc->upid, "register_handler");
 
   preempt_enable();
 
@@ -90,12 +108,27 @@ int create_vector(struct file *file, struct uintr_device *uintr_dev,
 
 int unregister_handler(struct file *file) {
   struct uintr_file *ufile = file->private_data;
+  struct uintr_process_ctx *ctx;
 
-  if (!ufile)
+  if (!ufile) {
+    pr_warn("UINTR: unregister_handler called with NULL ufile\n");
     return -EINVAL;
+  }
 
-  if (ufile->proc) {
-    uintr_proc_destroy(ufile->proc);
+  ctx = ufile->proc;
+  if (ctx) {
+    // Stop monitoring thread first
+    if (monitor_task) {
+      atomic_set(&monitor_should_exit, 1);
+      kthread_stop(monitor_task);
+      monitor_task = NULL;
+    }
+
+    ctx->task = NULL;
+
+    smp_wmb();
+
+    uintr_proc_destroy(ctx);
     ufile->proc = NULL;
   }
 

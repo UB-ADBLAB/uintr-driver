@@ -2,6 +2,7 @@
 #include "arch/x86/uintr.h"
 #include "core.h"
 #include "fops.h"
+#include "logging/monitor.h"
 #include "msr.h"
 #include "proc.h"
 #include "protocol.h"
@@ -16,8 +17,10 @@
 #include <asm/special_insns.h>
 #include <asm/tlbflush.h>
 
+#include <linux/delay.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
+#include <linux/kthread.h>
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/types.h>
@@ -61,6 +64,11 @@ static int check_cpu_compatibility(void) {
 
   return 0;
 }
+
+static struct irqaction uintr_user_action = {
+  .name = "uintr_user",
+  .flags = IRQF_NO_THREAD,
+};
 
 static void configure_uintr_tt_on_core(void *info) {
   u64 uintr_addr = (u64)info;
@@ -112,23 +120,29 @@ static int __init uintr_init(void) {
 }
 
 static void __exit uintr_exit(void) {
-  // TODO: Currently causes a #GP
-  uintr_clear_state();
+  // Stop any monitoring
+  if (monitor_task) {
+    atomic_set(&monitor_should_exit, 1);
+    kthread_stop(monitor_task);
+    monitor_task = NULL;
+  }
+
+  // TODO: may cause a #GP
+  on_each_cpu(uintr_clear_state, NULL, 1);
 
   if (uitt_mgr) {
     if (uitt_mgr->uitt) {
       if (uitt_mgr->uitt->entries) {
-        kfree(uitt_mgr->uitt->entries);
+        free_pages(
+            (unsigned long)uitt_mgr->uitt->entries,
+            get_order(uitt_mgr->uitt->size * sizeof(struct uintr_uitt_entry)));
+        uitt_mgr->uitt->entries = NULL;
       }
       kfree(uitt_mgr->uitt);
     }
-    if (uitt_mgr->allocated_vectors) {
-      kfree(uitt_mgr->allocated_vectors);
-    }
     kfree(uitt_mgr);
+    uitt_mgr = NULL;
   }
-
-  wrmsrl(MSR_IA32_UINTR_TT, 0);
 
   if (uintr_dev) {
     misc_deregister(&uintr_dev->misc);

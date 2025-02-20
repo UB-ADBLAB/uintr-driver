@@ -63,6 +63,8 @@ struct uintr_process_ctx *uintr_proc_create(struct task_struct *task) {
     return NULL;
   }
 
+  uintr_dump_upid_state(ctx->upid, "proc_create");
+
   return ctx;
 }
 
@@ -71,12 +73,25 @@ void uintr_proc_destroy(struct uintr_process_ctx *ctx) {
     return;
 
   // Clear CPU state
-  uintr_clear_state();
+  preempt_disable();
+  uintr_clear_state(NULL);
+  preempt_enable();
+
+  spin_lock(&ctx->ctx_lock);
 
   // Free UPID
   if (ctx->upid) {
+    set_bit(UINTR_UPID_STATUS_SN,
+            (unsigned long *)&ctx->upid->nc
+                .status); // prevent other interrupts from posting
+
+    smp_wmb();
+
     kfree(ctx->upid);
+    ctx->upid = NULL;
   }
+
+  spin_unlock(&ctx->ctx_lock);
 
   kfree(ctx);
 }
