@@ -1,7 +1,7 @@
 #include "../include/uapi/linux/uintr.h"
-#include "arch/x86/uintr.h"
 #include "core.h"
 #include "fops.h"
+#include "irq.c"
 #include "logging/monitor.h"
 #include "msr.h"
 #include "proc.h"
@@ -19,6 +19,7 @@
 
 #include <linux/delay.h>
 #include <linux/init.h>
+#include <linux/interrupt.h>
 #include <linux/kernel.h>
 #include <linux/kthread.h>
 #include <linux/module.h>
@@ -65,11 +66,7 @@ static int check_cpu_compatibility(void) {
   return 0;
 }
 
-static struct irqaction uintr_user_action = {
-  .name = "uintr_user",
-  .flags = IRQF_NO_THREAD,
-};
-
+// TODO: rename and move this
 static void configure_uintr_tt_on_core(void *info) {
   u64 uintr_addr = (u64)info;
 
@@ -101,6 +98,12 @@ static int __init uintr_init(void) {
 
   mutex_init(&uintr_dev->dev_mutex);
 
+  ret = setup_uintr_vectors(uintr_dev);
+  if (ret < 0) {
+    kfree(uintr_dev);
+    return ret;
+  }
+
   /* define misc device */
   uintr_dev->misc.minor = MISC_DYNAMIC_MINOR;
   uintr_dev->misc.name = "uintr";
@@ -123,13 +126,34 @@ static void __exit uintr_exit(void) {
   // Stop any monitoring
   if (monitor_task) {
     atomic_set(&monitor_should_exit, 1);
-    kthread_stop(monitor_task);
-    monitor_task = NULL;
+
+    msleep(100); // thread may need some time before exiting.
+
+    if (monitor_task) {
+      pr_info("UINTR: Stopping monitor thread\n");
+      kthread_stop(monitor_task);
+      monitor_task = NULL;
+    }
   }
 
-  // TODO: may cause a #GP
+  pr_info("UINTR: Disabling user interrupts on all CPUs\n");
   on_each_cpu(uintr_clear_state, NULL, 1);
 
+  pr_info("UINTR: Clearing CR4.UINTR bit on all CPUs\n");
+  on_each_cpu(clear_cr4_uintr_bit, NULL, 1);
+
+  // Free IRQs
+  if (uintr_dev) {
+    if (uintr_dev->irq_user_vec)
+      free_irq(uintr_dev->irq_user_vec, uintr_dev);
+    if (uintr_dev->irq_kern_vec)
+      free_irq(uintr_dev->irq_kern_vec, uintr_dev);
+  }
+
+  // Clear CR4.UINTR bit on all CPUs
+  on_each_cpu(clear_cr4_uintr_bit, NULL, 1);
+
+  // Clean up UITT
   if (uitt_mgr) {
     if (uitt_mgr->uitt) {
       if (uitt_mgr->uitt->entries) {
@@ -139,15 +163,18 @@ static void __exit uintr_exit(void) {
         uitt_mgr->uitt->entries = NULL;
       }
       kfree(uitt_mgr->uitt);
+      uitt_mgr->uitt = NULL;
     }
     kfree(uitt_mgr);
     uitt_mgr = NULL;
   }
 
+  // Unregister device
   if (uintr_dev) {
     misc_deregister(&uintr_dev->misc);
     mutex_destroy(&uintr_dev->dev_mutex);
     kfree(uintr_dev);
+    uintr_dev = NULL;
   }
 
   pr_info("UINTR: Driver unloaded\n");

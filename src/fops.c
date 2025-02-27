@@ -1,6 +1,7 @@
 #include "fops.h"
 #include "../include/uapi/linux/uintr.h"
 #include "core.h"
+#include "irq.c"
 #include "logging/monitor.h"
 #include "proc.h"
 #include "uitt.h"
@@ -15,8 +16,8 @@ struct uintr_process_ctx *register_handler(struct file *file,
                                            void __user *arg) {
   struct uintr_handler_args handler_args;
   struct uintr_process_ctx *proc;
-  u64 stack_addr;
-  int cpu;
+  u64 stack_addr, misc_val;
+  int cpu, ret;
 
   if (copy_from_user(&handler_args, arg, sizeof(handler_args)))
     return ERR_PTR(-EFAULT);
@@ -25,7 +26,7 @@ struct uintr_process_ctx *register_handler(struct file *file,
     return ERR_PTR(-EINVAL);
 
   // Create process context
-  proc = uintr_proc_create(current);
+  proc = uintr_proc_create(current, uintr_dev);
   if (!proc)
     return ERR_PTR(-ENOMEM);
 
@@ -40,11 +41,10 @@ struct uintr_process_ctx *register_handler(struct file *file,
     stack_addr = OS_ABI_REDZONE;
   }
 
-  atomic_set(&monitor_should_exit, 0);
-  monitor_task = kthread_run(upid_monitor_thread, proc, "uintr_monitor");
-  if (IS_ERR(monitor_task)) {
-    pr_err("UINTR: Failed to create monitor thread\n");
-    monitor_task = NULL;
+  ret = start_monitor_thread(proc);
+  if (ret < 0) {
+    pr_err("UINTR: Failed to start monitor thread, error %d\n", ret);
+    /* Not failing the handler registration for this non-critical component */
   }
 
   // Store handler
@@ -67,7 +67,13 @@ struct uintr_process_ctx *register_handler(struct file *file,
   wrmsrl(MSR_IA32_UINTR_HANDLER, (u64)handler_args.handler);
   wrmsrl(MSR_IA32_UINTR_STACKADJUST, stack_addr);
   wrmsrl(MSR_IA32_UINTR_PD, (u64)proc->upid); // virt_to_phys?
-  wrmsrl(MSR_IA32_UINTR_MISC, (u64)8 << 32);
+
+  rdmsrl(MSR_IA32_UINTR_MISC, misc_val);
+  // Clear UINV field (bits 39:32)
+  misc_val &= ~(0xFFULL << 32);
+  // Set UINV to your desired value (the notification vector)
+  misc_val |= ((u64)IRQ_VEC_USER << 32);
+  wrmsrl(MSR_IA32_UINTR_MISC, misc_val);
 
   pr_info("UINTR: Registered handler on CPU %d, handler address %lld", cpu,
           (u64)handler_args.handler);
@@ -124,10 +130,27 @@ int unregister_handler(struct file *file) {
       monitor_task = NULL;
     }
 
+    // Set task to NULL before cleanup
     ctx->task = NULL;
 
+    // Memory barrier to ensure writes complete
     smp_wmb();
 
+    // Clear CPU state on the current CPU
+    preempt_disable();
+    uintr_clear_state(NULL);
+    preempt_enable();
+
+    if (ctx->upid) {
+      // Mark UPID as suppressed to prevent new interrupts
+      set_bit(UINTR_UPID_STATUS_SN, (unsigned long *)&ctx->upid->nc.status);
+      smp_wmb();
+
+      kfree(ctx->upid);
+    }
+    ctx->upid = NULL;
+
+    // Free the process context
     uintr_proc_destroy(ctx);
     ufile->proc = NULL;
   }

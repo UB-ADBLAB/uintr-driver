@@ -1,5 +1,6 @@
 #include "state.h"
 #include "core.h"
+#include "irq.c"
 #include "proc.h"
 
 #include <asm/apic.h>
@@ -39,13 +40,20 @@ void uintr_restore_state(struct uintr_state *state) {
 }
 
 void uintr_clear_state(void *info) {
+  u64 misc_val;
+
+  // First clear notification vector in MISC MSR to prevent new interrupts
+  // This register is finicky when setting values..
+  rdmsrl(MSR_IA32_UINTR_MISC, misc_val);
+  misc_val &= ~(0xFFULL << 32); // Clear notification vector bits
+  wrmsrl(MSR_IA32_UINTR_MISC, misc_val);
+
   wrmsrl(MSR_IA32_UINTR_HANDLER, 0);
   wrmsrl(MSR_IA32_UINTR_STACKADJUST, 0);
-  wrmsrl(MSR_IA32_UINTR_MISC,
-         0); // TODO: We should only clear the correct bits with a masking here.
   wrmsrl(MSR_IA32_UINTR_PD, 0);
-  wrmsrl(MSR_IA32_UINTR_TT, 0);
   wrmsrl(MSR_IA32_UINTR_RR, 0);
+
+  wrmsrl(MSR_IA32_UINTR_TT, 0);
 }
 
 static inline u32 cpu_to_ndst(int cpu) {
@@ -76,7 +84,7 @@ static inline u32 cpu_to_ndst(int cpu) {
   return apicid;
 }
 
-int uintr_init_state(struct uintr_process_ctx *ctx) {
+int uintr_init_state(struct uintr_process_ctx *ctx, struct uintr_device *dev) {
   struct task_struct *task;
   struct uintr_upid *upid;
   if (!ctx)
@@ -99,7 +107,7 @@ int uintr_init_state(struct uintr_process_ctx *ctx) {
   ctx->upid->nc.status = 0;
   ctx->upid->puir = 0;
   ctx->upid->nc.ndst = cpu_to_ndst(task_cpu(task));
-  ctx->upid->nc.nv = UINTR_NOTIFICATION_VECTOR;
+  ctx->upid->nc.nv = IRQ_VEC_USER;
 
   ctx->handler_active = 0;
   ctx->handler = NULL;

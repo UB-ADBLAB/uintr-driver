@@ -57,13 +57,14 @@ void uitt_cleanup(void) {
   if (!uitt_mgr)
     return;
 
-  if (uitt_mgr->uitt->entries) {
-    kfree(uitt_mgr->uitt->entries);
-    uitt_mgr->uitt->entries = NULL;
-  }
-
-  if (uitt_mgr->allocated_vectors) {
-    kfree(uitt_mgr->allocated_vectors);
+  if (uitt_mgr->uitt) {
+    if (uitt_mgr->uitt->entries) {
+      free_pages(
+          (unsigned long)uitt_mgr->uitt->entries,
+          get_order(uitt_mgr->uitt->size * sizeof(struct uintr_uitt_entry)));
+      uitt_mgr->uitt->entries = NULL;
+    }
+    kfree(uitt_mgr->uitt);
   }
 
   kfree(uitt_mgr);

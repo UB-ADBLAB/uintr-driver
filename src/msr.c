@@ -27,3 +27,12 @@ void set_cr4_uintr_bit(void) {
     // pr_info("UINTR: Core %d - CR4.UINTR bit enabled!\n", smp_processor_id());
   }
 }
+
+void clear_cr4_uintr_bit(void *info) {
+  unsigned long cr4 = __read_cr4();
+  if (cr4 & X86_CR4_UINTR) {
+    cr4_clear_bits(X86_CR4_UINTR);
+    pr_info_once("UINTR: CR4.UINTR bit cleared on CPU %d\n",
+                 smp_processor_id());
+  }
+}

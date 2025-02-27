@@ -41,7 +41,8 @@
 /*  synchronize_rcu();*/
 /*}*/
 
-struct uintr_process_ctx *uintr_proc_create(struct task_struct *task) {
+struct uintr_process_ctx *uintr_proc_create(struct task_struct *task,
+                                            struct uintr_device *dev) {
   struct uintr_process_ctx *ctx;
   int ret;
 
@@ -57,7 +58,7 @@ struct uintr_process_ctx *uintr_proc_create(struct task_struct *task) {
   }
   ctx->task = task;
 
-  ret = uintr_init_state(ctx);
+  ret = uintr_init_state(ctx, dev);
   if (ret < 0) {
     kfree(ctx);
     return NULL;
