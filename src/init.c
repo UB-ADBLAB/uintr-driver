@@ -89,6 +89,12 @@ static int __init uintr_init(void) {
   if (ret < 0)
     return ret;
 
+  ret = uintr_sched_trace_init();
+  if (ret < 0) {
+    pr_err("UINTR: Failed to initialize scheduler tracing\n");
+    return ret;
+  }
+
   on_each_cpu(configure_uintr_tt_on_core, (void *)uintr_uitt_base_addr, 1);
 
   uintr_dev = kzalloc(sizeof(*uintr_dev), GFP_KERNEL);
