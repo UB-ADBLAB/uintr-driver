@@ -1,7 +1,7 @@
 #include "state.h"
 #include "core.h"
 #include "irq.c"
-#include "proc.h"
+#include "logging/monitor.h"
 
 #include <asm/apic.h>
 #include <asm/apicdef.h>
@@ -11,9 +11,6 @@
 #include <linux/mm.h>
 #include <linux/slab.h>
 #include <linux/types.h>
-
-static struct uintr_upid prev_state;
-static bool is_first_check = true;
 
 void uintr_save_state(struct uintr_state *state) {
   if (!state)
@@ -118,77 +115,4 @@ int uintr_init_state(struct uintr_process_ctx *ctx, struct uintr_device *dev) {
   memset(&ctx->state, 0, sizeof(struct uintr_state));
 
   return 0;
-}
-
-static const char *get_status_str(u8 status) {
-  if (status & (1 << UINTR_UPID_STATUS_BLKD))
-    return "BLKD";
-  if (status & (1 << UINTR_UPID_STATUS_SN))
-    return "SN";
-  if (status & (1 << UINTR_UPID_STATUS_ON))
-    return "ON";
-  return "OFF";
-}
-
-void uintr_dump_upid_state(const struct uintr_upid *upid, const char *caller) {
-  if (!upid) {
-    pr_info("UINTR [%s]: UPID is NULL\n", caller);
-    return;
-  }
-
-  pr_info("UINTR [%s]: UPID State:\n", caller);
-  pr_info("  Status: %s (0x%x)\n", get_status_str(upid->nc.status),
-          upid->nc.status);
-  pr_info("  Notification Vector: 0x%x\n", upid->nc.nv);
-  pr_info("  Notification Dest: 0x%x\n", upid->nc.ndst);
-  pr_info("  Posted Interrupts: 0x%llx\n", upid->puir);
-}
-
-void uintr_monitor_upid_changes(const struct uintr_upid *upid,
-                                const char *caller) {
-  if (!upid) {
-    pr_debug("UINTR [%s]: UPID is NULL\n", caller);
-    return;
-  }
-
-  if (is_first_check) {
-    memcpy(&prev_state, upid, sizeof(prev_state));
-    is_first_check = false;
-    uintr_dump_upid_state(upid, caller);
-    return;
-  }
-
-  bool changed = false;
-
-  if (prev_state.nc.status != upid->nc.status) {
-    pr_info("UINTR [%s]: Status changed: %s -> %s\n", caller,
-            get_status_str(prev_state.nc.status),
-            get_status_str(upid->nc.status));
-    changed = true;
-  }
-
-  if (prev_state.nc.nv != upid->nc.nv) {
-    pr_info("UINTR [%s]: Notification vector changed: 0x%x -> 0x%x\n", caller,
-            prev_state.nc.nv, upid->nc.nv);
-    changed = true;
-  }
-
-  if (prev_state.nc.ndst != upid->nc.ndst) {
-    pr_info("UINTR [%s]: Notification dest changed: 0x%x -> 0x%x\n", caller,
-            prev_state.nc.ndst, upid->nc.ndst);
-    changed = true;
-  }
-
-  if (prev_state.puir != upid->puir) {
-    pr_info("UINTR [%s]: Posted interrupts changed: 0x%llx -> 0x%llx\n", caller,
-            prev_state.puir, upid->puir);
-    changed = true;
-  }
-
-  if (!changed) {
-    pr_info("UINTR [%s]: No changes detected\n", caller);
-  }
-
-  // Update previous state
-  memcpy(&prev_state, upid, sizeof(prev_state));
 }

@@ -1,5 +1,6 @@
 #include "uitt.h"
 #include "core.h"
+#include "logging/monitor.h"
 #include <asm/io.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>

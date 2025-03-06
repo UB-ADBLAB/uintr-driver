@@ -2,7 +2,6 @@
 #define _INTEL_UINTR_PROC_H
 
 #include "core.h"
-#include "protocol.h"
 #include "uintr_types.h"
 #include <linux/types.h>
 

@@ -1,5 +1,6 @@
 #include "proc.h"
 #include "core.h"
+#include "logging/monitor.h"
 #include "state.h"
 #include "uitt.h"
 #include <asm/apic.h>

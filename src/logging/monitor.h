@@ -13,4 +13,11 @@ int upid_monitor_thread(void *data);
 int start_monitor_thread(struct uintr_process_ctx *proc);
 void stop_monitor_thread(void);
 
+void uintr_monitor_upid_changes(const struct uintr_upid *upid,
+                                const char *caller);
+
+void uintr_dump_upid_state(const struct uintr_upid *upid, const char *caller);
+
+char *get_status_str(u8 status);
+
 #endif

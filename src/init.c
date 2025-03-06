@@ -1,11 +1,10 @@
-#include "../include/uapi/linux/uintr.h"
 #include "core.h"
 #include "fops.h"
 #include "irq.c"
 #include "logging/monitor.h"
 #include "msr.h"
-#include "proc.h"
 #include "protocol.h"
+#include "trace/sched.h"
 #include "uitt.h"
 
 #include <asm/cpufeature.h>
@@ -123,17 +122,13 @@ static int __init uintr_init(void) {
 }
 
 static void __exit uintr_exit(void) {
-  // Stop any monitoring
+
+  // TODO: do we need to suppress interrupts first?
+  uintr_sched_trace_cleanup();
+
   if (monitor_task) {
-    atomic_set(&monitor_should_exit, 1);
-
-    msleep(100); // thread may need some time before exiting.
-
-    if (monitor_task) {
-      pr_info("UINTR: Stopping monitor thread\n");
-      kthread_stop(monitor_task);
-      monitor_task = NULL;
-    }
+    pr_info("UINTR: Stopping monitor thread...\n");
+    stop_monitor_thread();
   }
 
   pr_info("UINTR: Disabling user interrupts on all CPUs\n");

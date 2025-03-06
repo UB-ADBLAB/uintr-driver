@@ -15,8 +15,4 @@ void uintr_clear_state(void *info);
 
 int uintr_init_state(struct uintr_process_ctx *ctx, struct uintr_device *dev);
 
-void uintr_dump_upid_state(const struct uintr_upid *upid, const char *caller);
-void uintr_monitor_upid_changes(const struct uintr_upid *upid,
-                                const char *caller);
-
 #endif

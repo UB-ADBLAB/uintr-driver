@@ -4,6 +4,7 @@
 #include "irq.c"
 #include "logging/monitor.h"
 #include "proc.h"
+#include "trace/sched.h"
 #include "uitt.h"
 #include <asm/io.h>
 #include <linux/kthread.h>
@@ -41,11 +42,10 @@ struct uintr_process_ctx *register_handler(struct file *file,
     stack_addr = OS_ABI_REDZONE;
   }
 
-  ret = start_monitor_thread(proc);
-  if (ret < 0) {
-    pr_err("UINTR: Failed to start monitor thread, error %d\n", ret);
-    /* Not failing the handler registration for this non-critical component */
-  }
+  /*ret = start_monitor_thread(proc);*/
+  /*if (ret < 0) {*/
+  /*  pr_err("UINTR: Failed to start monitor thread, error %d\n", ret);*/
+  /*}*/
 
   // Store handler
   proc->handler = handler_args.handler;
@@ -78,10 +78,15 @@ struct uintr_process_ctx *register_handler(struct file *file,
   pr_info("UINTR: Registered handler on CPU %d, handler address %lld", cpu,
           (u64)handler_args.handler);
 
-  if (cpu_physical_id(cpu) != proc->upid->nc.ndst)
+  // register handler scheduler
+  ret = uintr_sched_trace_register_proc(proc);
+  if (ret < 0) {
+    pr_warn("UINTR: Failed to register process for scheduler tracing: %d\n",
+            ret);
+  }
 
-    // Save initial state
-    proc->handler_active = true;
+  // Save initial state
+  proc->handler_active = true;
 
   uintr_dump_upid_state(proc->upid, "register_handler");
 
@@ -132,6 +137,8 @@ int unregister_handler(struct file *file) {
 
     // Set task to NULL before cleanup
     ctx->task = NULL;
+
+    uintr_sched_trace_unregister_proc(ctx);
 
     // Memory barrier to ensure writes complete
     smp_wmb();
