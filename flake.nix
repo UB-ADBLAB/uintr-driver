@@ -31,6 +31,7 @@
           gnumake
           bc
           bison
+          bear
           flex
           openssl
           perl
