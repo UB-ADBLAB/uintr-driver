@@ -17,6 +17,9 @@ static int uintr_fd = -1;
 static volatile int interrupt_received = 0;
 static volatile sig_atomic_t keep_running = 1;
 
+#define HANDLER_STACK_SIZE (64 * 1024)
+static char *handler_stack = NULL;
+
 static void cleanup(void) {
   printf("\nCleaning up...\n");
 
@@ -29,12 +32,18 @@ static void cleanup(void) {
     close(uintr_fd);
     uintr_fd = -1;
   }
+
+  if (handler_stack) {
+    free(handler_stack);
+    handler_stack = NULL;
+  }
 }
 
 /* Handler for user interrupts */
 void __attribute__((interrupt)) test_handler(struct __uintr_frame *ui_frame,
                                              unsigned long long vector) {
   interrupt_received = 1;
+  _uiret();
 }
 
 static void sigint_handler(int signum) {
@@ -93,6 +102,15 @@ int main(void) {
     return EXIT_FAILURE;
   }
 
+  // allocate a dedicated stack for the uintr handler
+  handler_stack = aligned_alloc(4096, HANDLER_STACK_SIZE);
+  if (!handler_stack) {
+    perror("Failed to allocate handler stack");
+    return EXIT_FAILURE;
+  }
+  printf("Allocated handler stack at %p with size %d bytes\n", handler_stack,
+         HANDLER_STACK_SIZE);
+
   // Open the device
   uintr_fd = open("/dev/uintr", O_RDWR);
   if (uintr_fd < 0) {
@@ -101,8 +119,10 @@ int main(void) {
   }
 
   // Register interrupt handler
-  struct uintr_handler_args handler_args = {
-      .handler = test_handler, .stack = NULL, .stack_size = 0, .flags = 0};
+  struct uintr_handler_args handler_args = {.handler = test_handler,
+                                            .stack = handler_stack,
+                                            .stack_size = HANDLER_STACK_SIZE,
+                                            .flags = 0};
 
   printf("Registering handler...\n");
   int uipi_index = ioctl(uintr_fd, UINTR_REGISTER_HANDLER, &handler_args);
