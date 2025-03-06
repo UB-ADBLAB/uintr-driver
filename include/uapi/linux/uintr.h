@@ -3,6 +3,10 @@
 
 #include <linux/types.h>
 
+#ifndef __KERNEL__
+#include <stddef.h>
+#endif
+
 struct uintr_handler_args {
   void *handler;
   void *stack;
