@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <unistd.h>
 
 static int uintr_fd = -1;
@@ -18,7 +19,7 @@ static volatile int interrupt_received = 0;
 static volatile sig_atomic_t keep_running = 1;
 
 #define HANDLER_STACK_SIZE (64 * 1024)
-static char *handler_stack = NULL;
+static void *handler_stack = NULL;
 
 static void cleanup(void) {
   printf("\nCleaning up...\n");
@@ -40,10 +41,9 @@ static void cleanup(void) {
 }
 
 /* Handler for user interrupts */
-void __attribute__((interrupt)) test_handler(struct __uintr_frame *ui_frame,
-                                             unsigned long long vector) {
+void __attribute__((target("uintr"), interrupt))
+test_handler(struct __uintr_frame *ui_frame, unsigned long long vector) {
   interrupt_received = 1;
-  _uiret();
 }
 
 static void sigint_handler(int signum) {
