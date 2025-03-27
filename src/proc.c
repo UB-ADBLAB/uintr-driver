@@ -2,6 +2,7 @@
 #include "core.h"
 #include "logging/monitor.h"
 #include "state.h"
+#include "trace/sched.h"
 #include "uitt.h"
 #include <asm/apic.h>
 #include <asm/io.h>
@@ -32,6 +33,12 @@ struct uintr_process_ctx *uintr_proc_create(struct task_struct *task,
     return NULL;
   }
 
+  ret = uintr_sched_trace_register_proc(ctx);
+  if (ret < 0) {
+    pr_warn("UINTR: Failed to register for scheduler tracing: %d\n", ret);
+    // TODO: maybe error out instead.
+  }
+
   uintr_dump_upid_state(ctx->upid, "proc_create");
 
   return ctx;
@@ -40,6 +47,8 @@ struct uintr_process_ctx *uintr_proc_create(struct task_struct *task,
 void uintr_proc_destroy(struct uintr_process_ctx *ctx) {
   if (!ctx)
     return;
+
+  uintr_sched_trace_unregister_proc(ctx);
 
   // Clear CPU state
   preempt_disable();
