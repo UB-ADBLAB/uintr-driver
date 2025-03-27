@@ -11,8 +11,8 @@ clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
 
 load: all
-	sudo chmod 666 /dev/uintr
 	sudo insmod intel-uintr.ko
+	sudo chmod 666 /dev/uintr
 
 test_simpl:
 	gcc -g -mgeneral-regs-only -pthread tests/simplified_pinned.c -o simplified_pinned
