@@ -1,8 +1,9 @@
 #include "fops.h"
 #include "../include/uapi/linux/uintr.h"
 #include "core.h"
-#include "irq.c"
+#include "irq.h"
 #include "logging/monitor.h"
+#include "msr.h"
 #include "proc.h"
 #include "trace/sched.h"
 #include "uitt.h"
@@ -17,6 +18,7 @@ struct uintr_process_ctx *register_handler(struct file *file,
                                            void __user *arg) {
   struct uintr_handler_args handler_args;
   struct uintr_process_ctx *proc;
+  struct uintr_file *ufile = file->private_data;
   u64 stack_addr, misc_val;
   int cpu, ret;
 
@@ -37,21 +39,23 @@ struct uintr_process_ctx *register_handler(struct file *file,
       uintr_proc_destroy(proc);
       return ERR_PTR(-EINVAL);
     }
+
+    // handler_args.stack points to the START of allocated buffer (low address)
+    // We need to set the stack to the END of the buffer (high address)
+    // because stacks grow downward in x86_64
     stack_addr = (u64)handler_args.stack + handler_args.stack_size;
+
+    pr_info("UINTR: Stack setup - start: 0x%llx, size: %llu, adjusted top: "
+            "0x%llx\n",
+            (u64)handler_args.stack, (u64)handler_args.stack_size, stack_addr);
   } else {
     stack_addr = OS_ABI_REDZONE;
+    pr_info("UINTR: Using default stack adjustment (red zone): %d\n",
+            OS_ABI_REDZONE);
   }
-
-  /*ret = start_monitor_thread(proc);*/
-  /*if (ret < 0) {*/
-  /*  pr_err("UINTR: Failed to start monitor thread, error %d\n", ret);*/
-  /*}*/
 
   // Store handler
   proc->handler = handler_args.handler;
-
-  // Store process context directly in file
-  file->private_data = proc;
 
   preempt_disable();
 
@@ -65,16 +69,19 @@ struct uintr_process_ctx *register_handler(struct file *file,
 
   cpu = smp_processor_id();
   wrmsrl(MSR_IA32_UINTR_HANDLER, (u64)handler_args.handler);
-  wrmsrl(MSR_IA32_UINTR_STACKADJUST, stack_addr);
-  wrmsrl(MSR_IA32_UINTR_PD, (u64)proc->upid); // virt_to_phys?
+  wrmsrl(MSR_IA32_UINTR_STACKADJUST, stack_addr | 0x1);
+  // lowest bit indicates this reg is set ---------^
+
+  wrmsrl(MSR_IA32_UINTR_PD, (u64)proc->upid);
 
   rdmsrl(MSR_IA32_UINTR_MISC, misc_val);
   // Clear UINV field (bits 39:32)
   misc_val &= ~(0xFFULL << 32);
-  // Set UINV to your desired value (the notification vector)
+  // Set UINV to the notification vector
   misc_val |= ((u64)IRQ_VEC_USER << 32);
   wrmsrl(MSR_IA32_UINTR_MISC, misc_val);
 
+  dump_uintr_msrs();
   pr_info("UINTR: Registered handler on CPU %d, handler address %lld", cpu,
           (u64)handler_args.handler);
 
@@ -89,81 +96,27 @@ struct uintr_process_ctx *register_handler(struct file *file,
   proc->handler_active = true;
 
   uintr_dump_upid_state(proc->upid, "register_handler");
+  uintr_dump_uitt_state("register_handler");
 
   preempt_enable();
 
   return proc;
 }
 
-int create_vector(struct file *file, struct uintr_device *uintr_dev,
-                  void __user *arg) {
-  struct uintr_vector_args vector_args;
-  struct uintr_file *ufile;
-  int ret;
-
-  if (copy_from_user(&vector_args, arg, sizeof(vector_args)))
-    return -EFAULT;
-
-  ufile = file->private_data;
-  if (!ufile || !ufile->proc)
-    return -EINVAL;
-
-  // TODO: I have chosen to simplify the process of creating vectors, so we'll
-  // have to come back to this.
-  ret = 0; // uintr_vector_create(ufile->proc, vector_args.vector);
-  if (ret < 0)
-    return ret;
-
-  return 0;
-}
-
-int unregister_handler(struct file *file) {
-  struct uintr_file *ufile = file->private_data;
+int unregister_handler(unsigned int uitte_idx) {
   struct uintr_process_ctx *ctx;
 
-  if (!ufile) {
-    pr_warn("UINTR: unregister_handler called with NULL ufile\n");
+  ctx = uitt_get_proc_ctx(uitte_idx);
+  if (!ctx) {
+    pr_warn("UINTR: No process context found for UITT index %u\n", uitte_idx);
     return -EINVAL;
   }
 
-  ctx = ufile->proc;
-  if (ctx) {
-    // Stop monitoring thread first
-    if (monitor_task) {
-      atomic_set(&monitor_should_exit, 1);
-      kthread_stop(monitor_task);
-      monitor_task = NULL;
-    }
+  uitt_free_entry(uitte_idx);
 
-    // Set task to NULL before cleanup
-    ctx->task = NULL;
+  uintr_proc_destroy(ctx);
 
-    uintr_sched_trace_unregister_proc(ctx);
-
-    // Memory barrier to ensure writes complete
-    smp_wmb();
-
-    // Clear CPU state on the current CPU
-    preempt_disable();
-    uintr_clear_state(NULL);
-    preempt_enable();
-
-    if (ctx->upid) {
-      // Mark UPID as suppressed to prevent new interrupts
-      set_bit(UINTR_UPID_STATUS_SN, (unsigned long *)&ctx->upid->nc.status);
-      smp_wmb();
-
-      kfree(ctx->upid);
-    }
-    ctx->upid = NULL;
-
-    // Free the process context
-    uintr_proc_destroy(ctx);
-    ufile->proc = NULL;
-  }
-
-  kfree(ufile);
-  file->private_data = NULL;
+  uitt_set_proc_ctx(uitte_idx, NULL);
 
   return 0;
 }
@@ -174,16 +127,13 @@ long uintr_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
 
   switch (cmd) {
   case UINTR_REGISTER_HANDLER:
-    struct uintr_process_ctx *ctx =
-        register_handler(file, uintr_dev, (void __user *)arg);
+    struct uintr_process_ctx *ctx;
+    ctx = register_handler(file, uintr_dev, (void __user *)arg);
     ret = uitt_alloc_entry(ctx);
     break;
-  case UINTR_CREATE_FD:
-    pr_info("UINTR: IOCTL reached.");
-    ret = create_vector(file, uintr_dev, (void __user *)arg);
-    break;
   case UINTR_UNREGISTER_HANDLER:
-    ret = unregister_handler(file);
+    unsigned int idx = (unsigned int)arg;
+    ret = unregister_handler(idx);
     break;
   default:
     ret = -EINVAL;
@@ -193,19 +143,24 @@ long uintr_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
 }
 
 int uintr_open(struct inode *inode, struct file *file) {
-  struct uintr_device *uintr_dev =
+  struct uintr_file *ufile = kzalloc(sizeof(*ufile), GFP_KERNEL);
+  if (!ufile)
+    return -ENOMEM;
+
+  ufile->uintr_dev =
       container_of(file->private_data, struct uintr_device, misc);
-
-  file->private_data = uintr_dev;
-
+  spin_lock_init(&ufile->file_lock);
+  file->private_data = ufile;
   return 0;
 }
 
 int uintr_release(struct inode *inode, struct file *file) {
-  struct uintr_process_ctx *proc = file->private_data;
+  struct uintr_file *ufile = file->private_data;
 
-  if (proc) {
-    uintr_proc_destroy(proc);
+  if (ufile) {
+    if (ufile->proc)
+      uintr_proc_destroy(ufile->proc);
+    kfree(ufile);
     file->private_data = NULL;
   }
 

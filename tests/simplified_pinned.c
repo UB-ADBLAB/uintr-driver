@@ -169,7 +169,7 @@ cleanup:
   _clui();
 
   if (uintr_fd >= 0) {
-    ioctl(uintr_fd, UINTR_UNREGISTER_HANDLER);
+    ioctl(uintr_fd, UINTR_UNREGISTER_HANDLER, uipi_index);
     close(uintr_fd);
   }
   return ret;

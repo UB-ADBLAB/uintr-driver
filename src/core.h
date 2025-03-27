@@ -52,7 +52,7 @@ struct uintr_file {
 
 struct uintr_uitt_manager {
   struct uintr_uitt *uitt;
-  DECLARE_BITMAP(allocated_vectors, UINTR_MAX_UVEC_NR);
+  DECLARE_BITMAP(allocated_idx, UINTR_MAX_UVEC_NR);
   spinlock_t lock;
 };
 

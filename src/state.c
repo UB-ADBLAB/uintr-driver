@@ -1,6 +1,6 @@
 #include "state.h"
 #include "core.h"
-#include "irq.c"
+#include "irq.h"
 #include "logging/monitor.h"
 
 #include <asm/apic.h>
@@ -50,7 +50,8 @@ void uintr_clear_state(void *info) {
   wrmsrl(MSR_IA32_UINTR_PD, 0);
   wrmsrl(MSR_IA32_UINTR_RR, 0);
 
-  wrmsrl(MSR_IA32_UINTR_TT, 0);
+  // we shouldn't need to clear the TT msr as the value should be consistent
+  // once the driver is loaded.
 }
 
 static inline u32 cpu_to_ndst(int cpu) {
@@ -90,10 +91,7 @@ int uintr_init_state(struct uintr_process_ctx *ctx, struct uintr_device *dev) {
   task = ctx->task;
   spin_lock_init(&ctx->ctx_lock);
 
-  upid = kzalloc(sizeof(*upid),
-                 GFP_KERNEL); // vmalloc_user( sizeof(struct uintr_upid));
-                              // TODO: How should upid/uitt be addressed? user
-                              // space, kernel space, or physical?
+  upid = kzalloc(sizeof(*upid), GFP_KERNEL);
 
   if (!upid)
     return -ENOMEM;

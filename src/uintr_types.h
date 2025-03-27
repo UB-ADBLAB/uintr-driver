@@ -41,6 +41,7 @@ struct uintr_process_ctx {
   struct uintr_state state;
   struct uintr_upid *upid;
   bool handler_active;
+  int uitt_idx;
   spinlock_t ctx_lock;
 };
 

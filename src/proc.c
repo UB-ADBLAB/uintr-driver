@@ -9,39 +9,6 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 
-/*#define UINTR_PROC_HASH_BITS 6 // 2^6 = 64 buckets*/
-
-/*static DEFINE_HASHTABLE(proc_ctx_hash, UINTR_PROC_HASH_BITS);*/
-/*static DEFINE_SPINLOCK(proc_ctx_lock);*/
-
-/*static struct uintr_process_ctx *find_proc_ctx(pid_t pid) {*/
-/*  struct uintr_process_ctx *ctx;*/
-/**/
-/*  rcu_read_lock();*/
-/*  hash_for_each_possible_rcu(proc_ctx_hash, ctx, hash_node, pid) {*/
-/*    if (ctx->pid == pid) {*/
-/*      rcu_read_unlock();*/
-/*      return ctx;*/
-/*    }*/
-/*  }*/
-/*  rcu_read_unlock();*/
-/*  return NULL;*/
-/*}*/
-
-/*static int add_proc_ctx(struct uintr_process_ctx *ctx) {*/
-/*  spin_lock(&proc_ctx_lock);*/
-/*  hash_add_rcu(proc_ctx_hash, &ctx->hash_node, ctx->pid);*/
-/*  spin_unlock(&proc_ctx_lock);*/
-/*  return 0;*/
-/*}*/
-/**/
-/*static void remove_proc_ctx(struct uintr_process_ctx *ctx) {*/
-/*  spin_lock(&proc_ctx_lock);*/
-/*  hash_del_rcu(&ctx->hash_node);*/
-/*  spin_unlock(&proc_ctx_lock);*/
-/*  synchronize_rcu();*/
-/*}*/
-
 struct uintr_process_ctx *uintr_proc_create(struct task_struct *task,
                                             struct uintr_device *dev) {
   struct uintr_process_ctx *ctx;

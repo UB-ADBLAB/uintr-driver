@@ -1,6 +1,6 @@
 #include "core.h"
 #include "fops.h"
-#include "irq.c"
+#include "irq.h"
 #include "logging/monitor.h"
 #include "msr.h"
 #include "protocol.h"
@@ -144,31 +144,15 @@ static void __exit uintr_exit(void) {
   on_each_cpu(clear_cr4_uintr_bit, NULL, 1);
 
   // Free IRQs
-  if (uintr_dev) {
-    if (uintr_dev->irq_user_vec)
-      free_irq(uintr_dev->irq_user_vec, uintr_dev);
-    if (uintr_dev->irq_kern_vec)
-      free_irq(uintr_dev->irq_kern_vec, uintr_dev);
-  }
+  free_irq(IRQ_VEC_USER, uintr_dev);
 
   // Clear CR4.UINTR bit on all CPUs
   on_each_cpu(clear_cr4_uintr_bit, NULL, 1);
 
-  // Clean up UITT
-  if (uitt_mgr) {
-    if (uitt_mgr->uitt) {
-      if (uitt_mgr->uitt->entries) {
-        free_pages(
-            (unsigned long)uitt_mgr->uitt->entries,
-            get_order(uitt_mgr->uitt->size * sizeof(struct uintr_uitt_entry)));
-        uitt_mgr->uitt->entries = NULL;
-      }
-      kfree(uitt_mgr->uitt);
-      uitt_mgr->uitt = NULL;
-    }
-    kfree(uitt_mgr);
-    uitt_mgr = NULL;
-  }
+  synchronize_irq(IRQ_VEC_USER);
+  synchronize_rcu();
+
+  uitt_cleanup();
 
   // Unregister device
   if (uintr_dev) {

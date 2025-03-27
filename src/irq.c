@@ -1,43 +1,43 @@
+#include "irq.h"
 #include "core.h"
+#include "msr.h"
 #include <asm/apic.h>
 #include <asm/irq_regs.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
 
-static irqreturn_t uintr_notification_handler(int irq, void *dev_id);
-static irqreturn_t uintr_kernel_handler(int irq, void *dev_id);
-static int setup_uintr_vectors(struct uintr_device *dev);
-
-#define IRQ_VEC_USER                                                           \
-  0xeb // We should set this dynamically.. may be more complicated then
-       // expected.
-
-static int setup_uintr_vectors(struct uintr_device *dev) {
+int setup_uintr_vectors(struct uintr_device *dev) {
   int ret;
 
-  ret = request_any_context_irq(IRQ_VEC_USER, uintr_notification_handler,
-                                IRQF_SHARED, "uintr_user", dev);
+  ret = request_threaded_irq(IRQ_VEC_USER, uintr_notification_handler, NULL,
+                             IRQF_SHARED | IRQF_NOBALANCING, "uintr_user", dev);
+
   if (ret < 0) {
     pr_err("UINTR: Failed to request user notification IRQ: %d\n", ret);
     return ret;
   }
-  dev->irq_user_vec = ret;
+  dev->irq_user_vec = IRQ_VEC_USER;
 
+  pr_info("UINTR: Successfully registered IRQ 0x%x\n", IRQ_VEC_USER);
   return 0;
 }
-static irqreturn_t uintr_notification_handler(int irq, void *dev_id) {
-  // Handle user notifications
 
-  // We don't need to explicitly call the handler function as the hardware
-  // should handle this for us.
+irqreturn_t uintr_notification_handler(int irq, void *dev_id) {
+  u64 rr_value;
 
-  native_apic_mem_write(APIC_EOI, 0); // TODO: is this necessary?
+  rdmsrl(MSR_IA32_UINTR_RR, rr_value);
+
+  if (rr_value != 0) {
+    pr_info("UINTR: Notification IRQ %d, RR value: 0x%llx\n", irq, rr_value);
+  }
+
+  dump_uintr_msrs();
 
   pr_info("UINTR: User notification received on IRQ %d\n", irq);
   return IRQ_HANDLED;
 }
 
-static irqreturn_t uintr_kernel_handler(int irq, void *dev_id) {
+irqreturn_t uintr_kernel_handler(int irq, void *dev_id) {
   // Handle kernel notifications
   pr_info("UINTR: Kernel notification received on IRQ %d\n", irq);
   return IRQ_HANDLED;
