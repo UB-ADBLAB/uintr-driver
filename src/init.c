@@ -132,11 +132,6 @@ static void __exit uintr_exit(void) {
   // TODO: do we need to suppress interrupts first?
   uintr_sched_trace_cleanup();
 
-  if (monitor_task) {
-    pr_info("UINTR: Stopping monitor thread...\n");
-    stop_monitor_thread();
-  }
-
   pr_info("UINTR: Disabling user interrupts on all CPUs\n");
   on_each_cpu(uintr_clear_state, NULL, 1);
 
