@@ -73,37 +73,3 @@ void uintr_proc_destroy(struct uintr_process_ctx *ctx) {
 
   kfree(ctx);
 }
-
-/*static void __trace_sched_migrate_task(void *data, struct task_struct *p,*/
-/*                                       int dest_cpu) {*/
-/**/
-/*  struct uintr_process_ctx *proc_ctx;*/
-/**/
-/*  ctx = find_proc_ctx(p->pid);*/
-/*  if (!ctx)*/
-/*    return;*/
-/**/
-/*  proc_ctx->upid->nc.ndst = cpu_physical_id(dest_cpu);*/
-/**/
-/*  pr_info("UINTR: Process %d migrated to CPU %d (APIC ID: %u)\n", task->pid,*/
-/*          dest_cpu, proc_ctx->upid->nc.ndst);*/
-/*}*/
-/**/
-/*static int init_sched_migrate_tracepoint(void) {*/
-/*  int ret;*/
-/**/
-/*  ret = tracepoint_probe_register("sched_migrate_task",*/
-/*                                  __trace_sched_migrate_task, NULL);*/
-/*  if (ret) {*/
-/*    pr_err("UINTR: Failed to register sched_migrate_task tracepoint\n");*/
-/*    return ret;*/
-/*  }*/
-/**/
-/*  return 0;*/
-/*}*/
-/**/
-/*static void cleanup_sched_migrate_tracepoint(void) {*/
-/*  tracepoint_probe_unregister("sched_migrate_task",
- * __trace_sched_migrate_task,*/
-/*                              NULL);*/
-/*}*/

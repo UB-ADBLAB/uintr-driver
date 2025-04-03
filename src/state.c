@@ -54,7 +54,7 @@ void uintr_clear_state(void *info) {
   // once the driver is loaded.
 }
 
-static inline u32 cpu_to_ndst(int cpu) {
+inline u32 cpu_to_ndst(int cpu) {
   u32 apicid;
 
 // Get APIC ID for the CPU
@@ -85,6 +85,7 @@ static inline u32 cpu_to_ndst(int cpu) {
 int uintr_init_state(struct uintr_process_ctx *ctx, struct uintr_device *dev) {
   struct task_struct *task;
   struct uintr_upid *upid;
+  int cpu;
   if (!ctx)
     return -EINVAL;
 
@@ -98,10 +99,13 @@ int uintr_init_state(struct uintr_process_ctx *ctx, struct uintr_device *dev) {
 
   ctx->upid = upid;
 
+  cpu = task_cpu(task);
+
   // Initialize UPID
   ctx->upid->nc.status = 0;
   ctx->upid->puir = 0;
-  ctx->upid->nc.ndst = cpu_to_ndst(task_cpu(task));
+  ctx->phys_core = cpu; // TODO: VERY IMPORTANT FIX!!!11
+  ctx->upid->nc.ndst = cpu_to_ndst(cpu);
   ctx->upid->nc.nv = IRQ_VEC_USER;
 
   ctx->handler_active = 0;
