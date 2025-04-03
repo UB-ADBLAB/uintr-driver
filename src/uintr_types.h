@@ -38,6 +38,7 @@ struct uintr_vector_ctx {
 struct uintr_process_ctx {
   struct task_struct *task;
   void *handler;
+  int phys_core;
   struct uintr_state state;
   struct uintr_upid *upid;
   bool handler_active;

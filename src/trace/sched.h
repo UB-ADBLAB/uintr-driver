@@ -16,7 +16,4 @@ int uintr_sched_trace_register_proc(struct uintr_process_ctx *proc);
 // Unregister a process context from migration monitoring
 void uintr_sched_trace_unregister_proc(struct uintr_process_ctx *proc);
 
-// Helper function to get physical APIC ID for a logical CPU
-u32 uintr_cpu_to_ndst(int cpu);
-
 #endif

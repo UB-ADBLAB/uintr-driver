@@ -1,7 +1,9 @@
 #include "sched.h"
 #include "../core.h"
 #include "../logging/monitor.h"
+#include "../msr.h"
 #include "../state.h"
+#include "linux/smp.h"
 #include <asm/apic.h>
 #include <asm/apicdef.h>
 #include <linux/hashtable.h>
@@ -12,6 +14,38 @@
 #include <trace/events/sched.h>
 
 #define UINTR_PROC_HASH_BITS 6 /* 2^6 = 64 buckets for 64 entries */
+
+/* Function to save CPU state (to be called on the source CPU) */
+static void save_cpu_state_fn(void *info) {
+  struct uintr_process_ctx *proc = (struct uintr_process_ctx *)info;
+  if (!proc)
+    return;
+
+  int cpu = smp_processor_id();
+
+  pr_info("UINTR: Saving CPU state on %d for UPID %d", cpu, proc->uitt_idx);
+  dump_uintr_msrs();
+
+  /* Save the current CPU state to the process context */
+  uintr_save_state(&proc->state);
+}
+
+/* Function to restore CPU state (to be called on the destination CPU) */
+static void restore_cpu_state_fn(void *info) {
+  struct uintr_process_ctx *proc = (struct uintr_process_ctx *)info;
+  if (!proc)
+    return;
+
+  int cpu = smp_processor_id();
+
+  pr_info("UINTR: Restoring CPU state on %d from CPU %d for UPID %d", cpu,
+          proc->phys_core, proc->uitt_idx);
+  proc->phys_core = cpu;
+  dump_uintr_msrs();
+
+  /* Restore the CPU state from the process context */
+  uintr_restore_state(&proc->state);
+}
 
 static void tracepoint_find(struct tracepoint *tp, void *priv);
 
@@ -25,35 +59,6 @@ struct uintr_proc_mapping {
 /* Global hash table for PID to proc context mapping */
 static DEFINE_HASHTABLE(proc_ctx_hash, UINTR_PROC_HASH_BITS);
 static DEFINE_SPINLOCK(proc_ctx_lock);
-
-/* Helper function to get APIC ID for a CPU */
-u32 uintr_cpu_to_ndst(int cpu) {
-  u32 apicid;
-
-  /* Get APIC ID for the CPU */
-#ifdef CONFIG_X86_X2APIC
-  /* For x2APIC mode */
-  apicid = per_cpu(x86_cpu_to_apicid, cpu);
-#else
-  /* For xAPIC mode */
-  apicid = per_cpu(x86_bios_cpu_apicid, cpu);
-#endif
-
-  /* Check for invalid APIC ID */
-  if (apicid == BAD_APICID) {
-    pr_warn("UINTR: Invalid APIC ID for CPU %d\n", cpu);
-    return BAD_APICID;
-  }
-
-  /* Format based on APIC mode */
-  if (!x2apic_enabled()) {
-    /* xAPIC mode: shift APIC ID to bits 8-15 */
-    return (apicid << 8) & 0xFF00;
-  }
-
-  /* x2APIC mode: use APIC ID directly */
-  return apicid;
-}
 
 /* Find a process mapping by PID */
 static struct uintr_proc_mapping *find_proc_mapping(pid_t pid) {
@@ -91,11 +96,11 @@ static void uintr_trace_sched_migrate_task(void *data, struct task_struct *p,
     return;
 
   /* Calculate the new APIC destination ID based on dest_cpu */
-  new_ndst = uintr_cpu_to_ndst(dest_cpu);
-  if (new_ndst == BAD_APICID) {
-    pr_warn("UINTR: Invalid APIC ID for CPU %d during migration\n", dest_cpu);
-    return;
-  }
+  new_ndst = cpu_to_ndst(dest_cpu);
+
+  /*Must save CPU state here and then reload on the new cpu.*/
+
+  smp_call_function_single(proc->phys_core, save_cpu_state_fn, proc, 1);
 
   /* Update the notification destination in the UPID */
   if (proc->upid->nc.ndst != new_ndst) {
@@ -103,8 +108,13 @@ static void uintr_trace_sched_migrate_task(void *data, struct task_struct *p,
     proc->upid->nc.ndst = new_ndst;
     spin_unlock(&proc->ctx_lock);
 
-    pr_info("UINTR: Process %d migrated to CPU %d (APIC ID: %u)\n", pid,
-            dest_cpu, new_ndst);
+    pr_info(
+        "UINTR: Handler associated process %d migrated to CPU %d from CPU %d\n",
+        pid, proc->phys_core, dest_cpu);
+
+    smp_call_function_single(dest_cpu, restore_cpu_state_fn, proc, 1);
+
+    pr_info("UINTR: Restored state for PID %d to CPU %d\n", pid, dest_cpu);
 
     uintr_dump_upid_state(proc->upid, "sched_migrate");
   }
@@ -234,7 +244,7 @@ int uintr_sched_trace_register_proc(struct uintr_process_ctx *proc) {
 
   /* Initialize NDST to current CPU's APIC ID */
   if (proc->upid) {
-    u32 current_ndst = uintr_cpu_to_ndst(task_cpu(proc->task));
+    u32 current_ndst = cpu_to_ndst(task_cpu(proc->task));
     if (current_ndst != BAD_APICID) {
       spin_lock(&proc->ctx_lock);
       proc->upid->nc.ndst = current_ndst;
