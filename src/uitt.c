@@ -156,34 +156,34 @@ u64 uitt_get_physical_addr(void) { return uintr_uitt_base_addr; }
 void uintr_dump_uitt_entry_state(const struct uintr_uitt_entry *entry, int idx,
                                  const char *caller) {
   if (!entry) {
-    pr_info("UINTR [%s]: UITT entry %d is NULL\n", caller, idx);
+    pr_debug("UINTR [%s]: UITT entry %d is NULL\n", caller, idx);
     return;
   }
 
-  pr_info("UINTR [%s]: UITT Entry %d State:\n", caller, idx);
-  pr_info("  Raw memory (16 bytes):");
+  pr_debug("UINTR [%s]: UITT Entry %d State:\n", caller, idx);
+  pr_debug("  Raw memory (16 bytes):");
   print_hex_dump(KERN_INFO, "    ", DUMP_PREFIX_OFFSET, 16, 1, entry,
                  sizeof(struct uintr_uitt_entry), true);
 
-  pr_info("  Valid: %u\n", entry->valid);
-  pr_info("  User Vector: 0x%x\n", entry->user_vec);
-  pr_info("  Target UPID Address: 0x%llx\n", entry->target_upid_addr);
+  pr_debug("  Valid: %u\n", entry->valid);
+  pr_debug("  User Vector: 0x%x\n", entry->user_vec);
+  pr_debug("  Target UPID Address: 0x%llx\n", entry->target_upid_addr);
 }
 
 void uintr_dump_uitt_state(const char *caller) {
   int i;
 
   if (!uitt_mgr || !uitt_mgr->uitt || !uitt_mgr->uitt->entries) {
-    pr_info("UINTR [%s]: UITT is not initialized\n", caller);
+    pr_debug("UINTR [%s]: UITT is not initialized\n", caller);
     return;
   }
 
-  pr_info("UINTR [%s]: UITT State Overview:\n", caller);
-  pr_info("  Base Address: 0x%llx\n", uintr_uitt_base_addr);
-  pr_info("  Max Entries: %u\n", uintr_max_uitt_entries);
+  pr_debug("UINTR [%s]: UITT State Overview:\n", caller);
+  pr_debug("  Base Address: 0x%llx\n", uintr_uitt_base_addr);
+  pr_debug("  Max Entries: %u\n", uintr_max_uitt_entries);
 
   // Print allocated vectors
-  pr_info("  Allocated Vectors: ");
+  pr_debug("  Allocated Vectors: ");
   for (i = 0; i < UINTR_MAX_UVEC_NR; i++) {
     if (test_bit(i, uitt_mgr->allocated_idx)) {
       pr_cont("%d ", i);

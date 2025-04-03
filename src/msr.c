@@ -57,14 +57,15 @@ void dump_uintr_msrs(void) {
   rdmsrl(MSR_IA32_UINTR_TT, tt_val);
   rdmsrl(MSR_IA32_UINTR_RR, rr_val);
 
-  pr_info("UINTR: MSR state on CPU %d:\n", cpu);
-  pr_info("  CR4: 0x%llx (UINTR bit %s)\n", cr4_val,
-          (cr4_val & X86_CR4_UINTR) ? "SET" : "NOT SET");
-  pr_info("  HANDLER: 0x%llx\n", handler_val);
-  pr_info("  STACKADJUST: 0x%llx\n", stack_val);
-  pr_info("  MISC: 0x%llx (UINV: 0x%llx)\n", misc_val, (misc_val >> 32) & 0xFF);
-  pr_info("  PD: 0x%llx\n", pd_val);
-  pr_info("  TT: 0x%llx (base: 0x%llx, enabled: %lld)\n", tt_val,
-          tt_val & ~0xFFF, tt_val & 0x1);
-  pr_info("  RR: 0x%llx\n", rr_val);
+  pr_debug("UINTR: MSR state on CPU %d:\n", cpu);
+  pr_debug("  CR4: 0x%llx (UINTR bit %s)\n", cr4_val,
+           (cr4_val & X86_CR4_UINTR) ? "SET" : "NOT SET");
+  pr_debug("  HANDLER: 0x%llx\n", handler_val);
+  pr_debug("  STACKADJUST: 0x%llx\n", stack_val);
+  pr_debug("  MISC: 0x%llx (UINV: 0x%llx)\n", misc_val,
+           (misc_val >> 32) & 0xFF);
+  pr_debug("  PD: 0x%llx\n", pd_val);
+  pr_debug("  TT: 0x%llx (base: 0x%llx, enabled: %lld)\n", tt_val,
+           tt_val & ~0xFFF, tt_val & 0x1);
+  pr_debug("  RR: 0x%llx\n", rr_val);
 }
