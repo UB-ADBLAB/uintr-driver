@@ -13,10 +13,6 @@
 // Driver Version
 #define UINTR_DRIVER_VERSION "0.1.0"
 
-// Sapphire Rapids CPU identification
-#define SPR_FAMILY 0x6 // FAMILY: 6
-#define SPR_MODEL 0xCF // MODEL: 207
-
 // MSRs as specified in Intel SDM
 #define MSR_IA32_UINTR_RR 0x985
 #define MSR_IA32_UINTR_HANDLER 0x986
@@ -26,6 +22,8 @@
 #define MSR_IA32_UINTR_TT 0x98a
 
 #define X86_FEATURE_UINTR (18 * 32 + 5) /* User Interrupts support */
+
+#define XFEATURE_UINTR 14
 
 #ifndef X86_CR4_UINTR
 #define X86_CR4_UINTR (1ULL << 25)

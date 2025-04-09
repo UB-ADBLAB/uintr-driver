@@ -6,6 +6,7 @@
 #include "protocol.h"
 #include "trace/sched.h"
 #include "uitt.h"
+#include "util.h"
 
 #include <asm/cpufeature.h>
 #include <asm/fpu/xstate.h>
@@ -30,40 +31,6 @@ static struct uintr_uitt_manager *uitt_mgr;
 
 u32 uintr_max_uitt_entries;
 u64 uintr_uitt_base_addr;
-
-/*
- * check_cpu_compatibility - Verify CPU supports UINTR feature
- *
- * Returns 0 if CPU is compatible, negative error code otherwise
- */
-static int check_cpu_compatibility(void) {
-  struct cpuinfo_x86 *c = &cpu_data(0);
-
-  /* Verify Intel CPU */
-  if (c->x86_vendor != X86_VENDOR_INTEL) {
-    pr_err("UINTR: Not an Intel CPU\n");
-    return -EINVAL;
-  }
-
-  /* Verify Sapphire Rapids */
-  if (c->x86 != SPR_FAMILY || c->x86_model != SPR_MODEL) {
-    pr_err("UINTR: CPU is not Sapphire Rapids (Family: %d, Model: %x)\n",
-           c->x86, c->x86_model);
-    return -EINVAL;
-  }
-
-  /* Verify UINTR support */
-  if (!cpu_have_feature(X86_FEATURE_UINTR)) {
-    pr_err("UINTR: CPU does not support user interrupts\n");
-    return -EINVAL;
-  }
-
-  pr_info("UINTR: Compatible CPU detected (Family: %d, Model: %x)\n", c->x86,
-          c->x86_model);
-  pr_info("UINTR: CR4: 0x%lx\n", __read_cr4());
-
-  return 0;
-}
 
 // TODO: rename and move this
 static void configure_uintr_tt_on_core(void *info) {
