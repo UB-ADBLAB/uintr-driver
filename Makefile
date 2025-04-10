@@ -1,5 +1,5 @@
 obj-m := intel-uintr.o
-intel-uintr-objs := src/init.o src/fops.o src/state.o src/proc.o src/uitt.o src/msr.o src/logging/monitor.o src/irq.o src/trace/sched.o
+intel-uintr-objs := src/init.o src/fops.o src/state.o src/proc.o src/uitt.o src/msr.o src/logging/monitor.o src/irq.o src/trace/sched.o src/checks.o
 
 KERNELDIR ?= /lib/modules/$(shell uname -r)/build/
 PWD := $(shell pwd)

@@ -1,3 +1,4 @@
+#include "checks.h"
 #include "common.h"
 
 #include <asm/cpufeature.h>

@@ -18,7 +18,6 @@ struct uintr_process_ctx *register_handler(struct file *file,
                                            void __user *arg) {
   struct uintr_handler_args handler_args;
   struct uintr_process_ctx *proc;
-  struct uintr_file *ufile = file->private_data;
   u64 stack_addr, misc_val;
   int cpu, ret;
 
