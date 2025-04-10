@@ -8,7 +8,9 @@ all:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules
 
 clean:
+	mv ./compile_commands.json ./compile_commands.json.bak
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
+	mv ./compile_commands.json.bak ./compile_commands.json
 
 load: all
 	sudo insmod intel-uintr.ko
