@@ -1,8 +1,7 @@
 #ifndef _UINTR_STATE_H
 #define _UINTR_STATE_H
 
-#include "core.h"
-#include "uintr_types.h"
+#include "common.h"
 #include <linux/types.h>
 
 struct uintr_device;

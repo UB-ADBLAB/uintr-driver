@@ -1,12 +1,12 @@
-#include "core.h"
+#include "checks.h"
+#include "common.h"
+#include "driver.h"
 #include "fops.h"
 #include "irq.h"
 #include "logging/monitor.h"
 #include "msr.h"
-#include "protocol.h"
 #include "trace/sched.h"
 #include "uitt.h"
-#include "util.h"
 
 #include <asm/cpufeature.h>
 #include <asm/fpu/xstate.h>
@@ -27,13 +27,11 @@
 #include <linux/types.h>
 
 static struct uintr_device *uintr_dev;
-static struct uintr_uitt_manager *uitt_mgr;
 
 u32 uintr_max_uitt_entries;
 u64 uintr_uitt_base_addr;
 
-// TODO: rename and move this
-static void configure_uintr_tt_on_core(void *info) {
+static void uintr_configure_core(void *info) {
   u64 uintr_addr = (u64)info;
 
   // Set MSRs and CR4
@@ -62,7 +60,7 @@ static int __init uintr_init(void) {
     return ret;
   }
 
-  on_each_cpu(configure_uintr_tt_on_core, (void *)uintr_uitt_base_addr, 1);
+  on_each_cpu(uintr_configure_core, (void *)uintr_uitt_base_addr, 1);
 
   uintr_dev = kzalloc(sizeof(*uintr_dev), GFP_KERNEL);
   if (!uintr_dev)
@@ -70,7 +68,7 @@ static int __init uintr_init(void) {
 
   mutex_init(&uintr_dev->dev_mutex);
 
-  ret = setup_uintr_vectors(uintr_dev);
+  ret = uintr_init_irq(uintr_dev);
   if (ret < 0) {
     kfree(uintr_dev);
     return ret;

@@ -1,12 +1,12 @@
 #include "irq.h"
-#include "core.h"
+#include "common.h"
 #include "msr.h"
 #include <asm/apic.h>
 #include <asm/irq_regs.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
 
-int setup_uintr_vectors(struct uintr_device *dev) {
+int uintr_init_irq(struct uintr_device *dev) {
   int ret;
 
   ret = request_threaded_irq(IRQ_VEC_USER, uintr_notification_handler, NULL,

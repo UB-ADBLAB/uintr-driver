@@ -1,5 +1,5 @@
 #include "sched.h"
-#include "../core.h"
+#include "../common.h"
 #include "../logging/monitor.h"
 #include "../msr.h"
 #include "../state.h"
@@ -28,6 +28,8 @@ static void save_cpu_state_fn(void *info) {
 
   /* Save the current CPU state to the process context */
   uintr_save_state(&proc->state);
+  print_hex_dump(KERN_INFO, "    ", DUMP_PREFIX_OFFSET, 16, 1, &proc->state,
+                 sizeof(struct uintr_state), true);
 }
 
 /* Function to restore CPU state (to be called on the destination CPU) */
@@ -41,10 +43,14 @@ static void restore_cpu_state_fn(void *info) {
   pr_info("UINTR: Restoring CPU state on %d from CPU %d for UPID %d", cpu,
           proc->phys_core, proc->uitt_idx);
   proc->phys_core = cpu;
-  dump_uintr_msrs();
 
   /* Restore the CPU state from the process context */
   uintr_restore_state(&proc->state);
+
+  print_hex_dump(KERN_INFO, "    ", DUMP_PREFIX_OFFSET, 16, 1, &proc->state,
+                 sizeof(struct uintr_state), true);
+
+  dump_uintr_msrs();
 }
 
 static void tracepoint_find(struct tracepoint *tp, void *priv);

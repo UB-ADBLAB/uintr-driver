@@ -1,6 +1,6 @@
 #include "fops.h"
 #include "../include/uapi/linux/uintr.h"
-#include "core.h"
+#include "common.h"
 #include "irq.h"
 #include "logging/monitor.h"
 #include "msr.h"

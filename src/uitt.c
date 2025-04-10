@@ -1,5 +1,4 @@
 #include "uitt.h"
-#include "core.h"
 #include "logging/monitor.h"
 #include <asm/io.h>
 #include <linux/slab.h>
@@ -32,10 +31,12 @@ int uitt_init(void) {
   uintr_max_uitt_entries = 64;
   uitt_size = uintr_max_uitt_entries * sizeof(struct uintr_uitt_entry);
 
+  // allocate uitt management structure
   uitt_mgr = kzalloc(sizeof(*uitt_mgr), GFP_KERNEL);
   if (!uitt_mgr)
     return -ENOMEM;
 
+  // allocate actual uitt structure
   uitt = kzalloc(sizeof(*uitt), GFP_KERNEL);
   if (!uitt) {
     kfree(uitt_mgr);
@@ -150,8 +151,6 @@ int uitt_free_entry(unsigned int idx) {
   pr_info("UINTR: Freed UITT entry %u\n", idx);
   return 0;
 }
-
-u64 uitt_get_physical_addr(void) { return uintr_uitt_base_addr; }
 
 void uintr_dump_uitt_entry_state(const struct uintr_uitt_entry *entry, int idx,
                                  const char *caller) {

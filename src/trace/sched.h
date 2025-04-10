@@ -1,7 +1,7 @@
 #ifndef _UINTR_SCHED_H
 #define _UINTR_SCHED_H
 
-#include "../uintr_types.h"
+#include "../common.h"
 #include <linux/types.h>
 
 // Initialize the scheduler tracing subsystem

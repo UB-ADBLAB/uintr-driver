@@ -1,4 +1,4 @@
-#include "core.h"
+#include "common.h"
 #include <asm/msr.h>
 #include <asm/tlbflush.h>
 #include <linux/kernel.h>
