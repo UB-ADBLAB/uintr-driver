@@ -1,7 +1,7 @@
 #ifndef _INTEL_UINTR_UITT_H
 #define _INTEL_UINTR_UITT_H
 
-#include "common.h"
+#include "inteldef.h"
 #include <linux/types.h>
 
 /* UITT configuration -- needs to be initialized during driver set up */

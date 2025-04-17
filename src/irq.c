@@ -1,5 +1,5 @@
 #include "irq.h"
-#include "common.h"
+#include "inteldef.h"
 #include "msr.h"
 #include <asm/apic.h>
 #include <asm/irq_regs.h>

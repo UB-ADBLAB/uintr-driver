@@ -1,5 +1,5 @@
 #include "sched.h"
-#include "../common.h"
+#include "../inteldef.h"
 #include "../logging/monitor.h"
 #include "../msr.h"
 #include "../state.h"

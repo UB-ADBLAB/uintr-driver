@@ -1,6 +1,6 @@
 #include "fops.h"
-#include "../include/uapi/linux/uintr.h"
 #include "common.h"
+#include "inteldef.h"
 #include "irq.h"
 #include "logging/monitor.h"
 #include "msr.h"
@@ -16,7 +16,7 @@
 struct uintr_process_ctx *register_handler(struct file *file,
                                            struct uintr_device *uintr_dev,
                                            void __user *arg) {
-  struct uintr_handler_args handler_args;
+  struct _uintr_handler_args handler_args;
   struct uintr_process_ctx *proc;
   u64 stack_addr, misc_val;
   int cpu, ret;

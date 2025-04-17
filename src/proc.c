@@ -1,5 +1,5 @@
 #include "proc.h"
-#include "common.h"
+#include "inteldef.h"
 #include "logging/monitor.h"
 #include "state.h"
 #include "trace/sched.h"

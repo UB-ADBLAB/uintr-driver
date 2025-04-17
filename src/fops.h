@@ -1,8 +1,8 @@
 #ifndef _UINTR_FOPS_H
 #define _UINTR_FOPS_H
 
-#include "common.h"
 #include "driver.h"
+#include "inteldef.h"
 #include <linux/fs.h>
 
 int uintr_open(struct inode *inode, struct file *file);

@@ -1,5 +1,5 @@
 #include "checks.h"
-#include "common.h"
+#include "inteldef.h"
 
 #include <asm/cpufeature.h>
 #include <asm/msr.h>

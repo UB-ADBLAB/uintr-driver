@@ -1,7 +1,7 @@
 #include "checks.h"
-#include "common.h"
 #include "driver.h"
 #include "fops.h"
+#include "inteldef.h"
 #include "irq.h"
 #include "logging/monitor.h"
 #include "msr.h"

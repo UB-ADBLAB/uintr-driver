@@ -1,5 +1,5 @@
 #include "state.h"
-#include "common.h"
+#include "inteldef.h"
 #include "irq.h"
 #include "logging/monitor.h"
 

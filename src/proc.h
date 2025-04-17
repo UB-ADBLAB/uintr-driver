@@ -1,8 +1,8 @@
 #ifndef _INTEL_UINTR_PROC_H
 #define _INTEL_UINTR_PROC_H
 
-#include "common.h"
 #include "driver.h"
+#include "inteldef.h"
 #include <linux/types.h>
 
 int uintr_alloc_vector(struct uintr_process_ctx *ctx,

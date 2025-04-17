@@ -1,7 +1,7 @@
 #ifndef _UINTR_MONITOR_H
 #define _UINTR_MONITOR_H
 
-#include "../common.h"
+#include "../inteldef.h"
 #include <linux/atomic.h>
 #include <linux/kthread.h>
 

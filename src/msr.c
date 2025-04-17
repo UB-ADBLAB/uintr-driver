@@ -1,5 +1,5 @@
 #include "msr.h"
-#include "common.h"
+#include "inteldef.h"
 #include <asm/msr.h>
 #include <asm/tlbflush.h>
 #include <linux/kernel.h>
