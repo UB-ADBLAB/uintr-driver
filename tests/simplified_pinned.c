@@ -1,5 +1,5 @@
 #define _GNU_SOURCE
-#include "../include/uapi/linux/uintr.h"
+#include "../src/common.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -11,6 +11,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <x86intrin.h>
 
 static int uintr_fd = -1;
 
@@ -119,7 +120,7 @@ int main(void) {
   }
 
   // Register interrupt handler
-  struct uintr_handler_args handler_args = {.handler = test_handler,
+  struct _uintr_handler_args handler_args = {.handler = test_handler,
                                             .stack = handler_stack,
                                             .stack_size = HANDLER_STACK_SIZE,
                                             .flags = 0};

@@ -3,6 +3,11 @@
 
 #include <linux/types.h>
 
+// TODO: this is dumb
+#ifndef __KERNEL__
+#include <stddef.h>
+#endif
+
 struct _uintr_handler_args {
   void *handler;
   void *stack;

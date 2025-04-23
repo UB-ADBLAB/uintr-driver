@@ -17,7 +17,7 @@ load: all
 	sudo chmod 666 /dev/uintr
 
 test_simpl:
-	gcc -g -mgeneral-regs-only -pthread tests/simplified_pinned.c -o simplified_pinned
+	gcc -g -mgeneral-regs-only -muintr -pthread tests/simplified_pinned.c -o simplified_pinned
 
 test_migration:
-	gcc -mgeneral-regs-only -pthread tests/simplified_migration.c -o simplified_migration
+	gcc -mgeneral-regs-only -muintr -pthread tests/simplified_migration.c -o simplified_migration
