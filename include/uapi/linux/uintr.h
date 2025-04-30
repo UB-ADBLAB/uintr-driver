@@ -57,12 +57,12 @@ static inline long uintr_register_handler(void *handler, unsigned int flags) {
   }
 
   // check if stack info was provided via helper
-  if (!ctx->handler_stack || ctx->stack_size == 0) {
-    fprintf(stderr,
-            "[UINTR SHIM] Stack info not set via uintr_set_thread_stack_info() "
-            "before calling uintr_register_handler.\n");
-    return -EINVAL;
-  }
+  //if (!ctx->handler_stack || ctx->stack_size == 0) {
+  //  fprintf(stderr,
+  //          "[UINTR SHIM] Stack info not set via uintr_set_thread_stack_info() "
+  //          "before calling uintr_register_handler.\n");
+  //  return -EINVAL;
+  //}
 
   // open the device for ioctl
   ctx->dev_fd = open("/dev/uintr", O_RDWR);
@@ -73,8 +73,8 @@ static inline long uintr_register_handler(void *handler, unsigned int flags) {
 
   struct _uintr_handler_args args = {0};
   args.handler = handler;
-  args.stack = (void *)((char *)ctx->handler_stack + ctx->stack_size);
-  args.stack_size = ctx->stack_size;
+  args.stack = 0; //(void *)((char *)ctx->handler_stack + ctx->stack_size);
+  args.stack_size = 0; //ctx->stack_size;
   args.flags = flags;
 
   // call the real register handler ioctl

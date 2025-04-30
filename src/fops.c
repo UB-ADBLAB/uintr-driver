@@ -68,7 +68,7 @@ struct uintr_process_ctx *register_handler(struct file *file,
 
   cpu = smp_processor_id();
   wrmsrl(MSR_IA32_UINTR_HANDLER, (u64)handler_args.handler);
-  wrmsrl(MSR_IA32_UINTR_STACKADJUST, stack_addr | 0x1);
+  wrmsrl(MSR_IA32_UINTR_STACKADJUST, stack_addr); //| 0x1);
   // lowest bit indicates this reg is set ---------^
 
   wrmsrl(MSR_IA32_UINTR_PD, (u64)proc->upid);
