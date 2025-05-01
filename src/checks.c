@@ -13,11 +13,10 @@
  */
 int check_cpu_compatibility(void) {
   struct cpuinfo_x86 *c = &cpu_data(0);
-  u64 xss_val;
 
   /* Verify Intel CPU */
   if (c->x86_vendor != X86_VENDOR_INTEL) {
-    pr_err("UINTR: Not an Intel CPU\n");
+    pr_err("UINTR: Cannot load driver, not an Intel CPU\n");
     return -EINVAL;
   }
 
@@ -27,23 +26,8 @@ int check_cpu_compatibility(void) {
     return -EINVAL;
   }
 
-  /* Verify XSAVE UINTR feature support */
-  if (!cpu_have_feature(X86_FEATURE_XSAVE) &&
-      !cpu_have_feature(X86_FEATURE_XSAVES)) {
-    pr_warn("UINTR: CPU does not support XSAVE\n");
-  } else {
-    /* check that we actually have uintr xsave support */
-    rdmsrl(MSR_IA32_XSS, xss_val);
-
-    if (!(xss_val & (1ULL << XFEATURE_UINTR))) {
-      pr_warn("UINTR: CPU does not support XSAVE for user interrupts\n");
-      // TODO: set flag to use backup state management (current implementation)
-    }
-  }
-
   pr_info("UINTR: Compatible CPU detected (Family: %d, Model: %x)\n", c->x86,
           c->x86_model);
-  // pr_info("UINTR: CR4: 0x%lx\n", __read_cr4());
 
   return 0;
 }

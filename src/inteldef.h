@@ -15,8 +15,6 @@
 
 #define X86_FEATURE_UINTR (18 * 32 + 5) /* User Interrupts support */
 
-#define XFEATURE_UINTR 14 /* User Interrupt XSAVE feature */
-
 #ifndef X86_CR4_UINTR
 #define X86_CR4_UINTR (1ULL << 25) /* CR4 bit */
 #endif
@@ -74,7 +72,7 @@ struct uintr_process_ctx {
   struct task_struct *task;
   void *handler;
   int phys_core;
-  struct uintr_state state;
+  struct uintr_state *state;
   struct uintr_upid *upid;
   bool handler_active;
   int uitt_idx;
