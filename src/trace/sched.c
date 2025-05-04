@@ -24,12 +24,12 @@ static void save_cpu_state_fn(void *info) {
   int cpu = smp_processor_id();
 
   pr_info("UINTR: Saving CPU state on %d for UPID %d", cpu, proc->uitt_idx);
-  dump_uintr_msrs();
+  dump_uintr_msrs(NULL);
 
   /* Save the current CPU state to the process context */
   uintr_save_state(&proc->state);
-  print_hex_dump(KERN_INFO, "    ", DUMP_PREFIX_OFFSET, 16, 1, &proc->state,
-                 sizeof(struct uintr_state), true);
+  print_hex_dump_debug("    ", DUMP_PREFIX_OFFSET, 16, 1, &proc->state,
+                       sizeof(struct uintr_state), true);
 }
 
 /* Function to restore CPU state (to be called on the destination CPU) */
@@ -50,24 +50,17 @@ static void restore_cpu_state_fn(void *info) {
   print_hex_dump(KERN_INFO, "    ", DUMP_PREFIX_OFFSET, 16, 1, &proc->state,
                  sizeof(struct uintr_state), true);
 
-  dump_uintr_msrs();
+  dump_uintr_msrs(NULL);
 }
 
 static void tracepoint_find(struct tracepoint *tp, void *priv);
-
-/* Structure to store process context mapping */
-struct uintr_proc_mapping {
-  pid_t pid;
-  struct uintr_process_ctx *proc;
-  struct hlist_node node;
-};
 
 /* Global hash table for PID to proc context mapping */
 static DEFINE_HASHTABLE(proc_ctx_hash, UINTR_PROC_HASH_BITS);
 static DEFINE_SPINLOCK(proc_ctx_lock);
 
 /* Find a process mapping by PID */
-static struct uintr_proc_mapping *find_proc_mapping(pid_t pid) {
+struct uintr_proc_mapping *find_proc_mapping(pid_t pid) {
   struct uintr_proc_mapping *mapping;
 
   hash_for_each_possible(proc_ctx_hash, mapping, node, pid) {
@@ -109,21 +102,20 @@ static void uintr_trace_sched_migrate_task(void *data, struct task_struct *p,
   smp_call_function_single(proc->phys_core, save_cpu_state_fn, proc, 1);
 
   /* Update the notification destination in the UPID */
-  if (proc->upid->nc.ndst != new_ndst) {
-    spin_lock(&proc->ctx_lock);
-    proc->upid->nc.ndst = new_ndst;
-    spin_unlock(&proc->ctx_lock);
+  spin_lock(&proc->ctx_lock);
+  proc->upid->nc.ndst = new_ndst;
+  spin_unlock(&proc->ctx_lock);
 
-    pr_info(
-        "UINTR: Handler associated process %d migrated to CPU %d from CPU %d\n",
-        pid, proc->phys_core, dest_cpu);
+  pr_info(
+      "UINTR: Handler associated process %d migrated to CPU %d from CPU %d\n",
+      pid, proc->phys_core, dest_cpu);
 
-    smp_call_function_single(dest_cpu, restore_cpu_state_fn, proc, 1);
+  /* ALWAYS restore state on destination CPU */
+  smp_call_function_single(dest_cpu, restore_cpu_state_fn, proc, 1);
 
-    pr_info("UINTR: Restored state for PID %d to CPU %d\n", pid, dest_cpu);
+  pr_info("UINTR: Restored state for PID %d to CPU %d\n", pid, dest_cpu);
 
-    uintr_dump_upid_state(proc->upid, "sched_migrate");
-  }
+  uintr_dump_upid_state(proc->upid, "sched_migrate");
 }
 
 /* The tracepoint symbol */

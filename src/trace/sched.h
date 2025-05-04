@@ -4,6 +4,13 @@
 #include "../inteldef.h"
 #include <linux/types.h>
 
+/* Structure to store process context mapping */
+struct uintr_proc_mapping {
+  pid_t pid;
+  struct uintr_process_ctx *proc;
+  struct hlist_node node;
+};
+
 // Initialize the scheduler tracing subsystem
 int uintr_sched_trace_init(void);
 
@@ -15,5 +22,7 @@ int uintr_sched_trace_register_proc(struct uintr_process_ctx *proc);
 
 // Unregister a process context from migration monitoring
 void uintr_sched_trace_unregister_proc(struct uintr_process_ctx *proc);
+
+struct uintr_proc_mapping *find_proc_mapping(pid_t pid);
 
 #endif

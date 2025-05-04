@@ -43,6 +43,8 @@ void uintr_clear_state(void *info) {
   // This register is finicky when setting values..
   rdmsrl(MSR_IA32_UINTR_MISC, misc_val);
   misc_val &= ~(0xFFULL << 32); // Clear notification vector bits
+  misc_val |= ((u64)IRQ_VEC_USER << 32);
+  wrmsrl(MSR_IA32_UINTR_MISC, misc_val);
   wrmsrl(MSR_IA32_UINTR_MISC, misc_val);
 
   wrmsrl(MSR_IA32_UINTR_HANDLER, 0);
@@ -92,7 +94,12 @@ int uintr_init_state(struct uintr_process_ctx *ctx, struct uintr_device *dev) {
   task = ctx->task;
   spin_lock_init(&ctx->ctx_lock);
 
-  upid = kzalloc(sizeof(*upid), GFP_KERNEL);
+  void *raw = kmalloc(sizeof(*upid) + 63, GFP_KERNEL);
+  if (!raw)
+    return -ENOMEM;
+  /* bump to the next 64-byte boundary */
+  upid = (struct uintr_upid *)ALIGN((unsigned long)raw, 64);
+  memset(upid, 0, sizeof(*upid));
 
   if (!upid)
     return -ENOMEM;
@@ -104,7 +111,7 @@ int uintr_init_state(struct uintr_process_ctx *ctx, struct uintr_device *dev) {
   // Initialize UPID
   ctx->upid->nc.status = 0;
   ctx->upid->puir = 0;
-  ctx->phys_core = cpu; // TODO: VERY IMPORTANT FIX!!!11
+  ctx->phys_core = cpu; // TODO:
   ctx->upid->nc.ndst = cpu_to_ndst(cpu);
   ctx->upid->nc.nv = IRQ_VEC_USER;
 

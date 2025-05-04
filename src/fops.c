@@ -21,21 +21,16 @@ struct uintr_process_ctx *register_handler(struct file *file,
   u64 stack_addr, misc_val;
   int cpu, ret;
 
+  // set up handler_args in kernel space
   if (copy_from_user(&handler_args, arg, sizeof(handler_args)))
     return ERR_PTR(-EFAULT);
 
   if (!handler_args.handler)
     return ERR_PTR(-EINVAL);
 
-  // Create process context
-  proc = uintr_proc_create(current, uintr_dev);
-  if (!proc)
-    return ERR_PTR(-ENOMEM);
-
   // Set up stack address
   if (handler_args.stack) {
     if (!handler_args.stack_size || handler_args.stack_size < PAGE_SIZE) {
-      uintr_proc_destroy(proc);
       return ERR_PTR(-EINVAL);
     }
 
@@ -52,6 +47,11 @@ struct uintr_process_ctx *register_handler(struct file *file,
     pr_info("UINTR: Using default stack adjustment (red zone): %d\n",
             OS_ABI_REDZONE);
   }
+
+  // Create process context
+  proc = uintr_proc_create(current, uintr_dev);
+  if (!proc)
+    return ERR_PTR(-ENOMEM);
 
   // Store handler
   proc->handler = handler_args.handler;
