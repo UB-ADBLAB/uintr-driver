@@ -79,6 +79,7 @@ void *sender_thread(void *arg) {
   printf("Sender thread initialized on core: %d \n", cpu);
 
   sleep(3);
+
   printf("Sending user interrupt...\n");
   _senduipi(uipi_index);
   printf("User interrupt sent...\n");
@@ -121,9 +122,9 @@ int main(void) {
 
   // Register interrupt handler
   struct _uintr_handler_args handler_args = {.handler = test_handler,
-                                            .stack = handler_stack,
-                                            .stack_size = HANDLER_STACK_SIZE,
-                                            .flags = 0};
+                                             .stack = handler_stack,
+                                             .stack_size = HANDLER_STACK_SIZE,
+                                             .flags = 0};
 
   printf("Registering handler...\n");
   int uipi_index = ioctl(uintr_fd, UINTR_REGISTER_HANDLER, &handler_args);
@@ -152,6 +153,8 @@ int main(void) {
   cpu = sched_getcpu();
   printf("Main thread running on core: %d\n", cpu);
   printf("Waiting for interrupt...\n");
+
+  ioctl(uintr_fd, UINTR_DUMP_MSR, cpu);
 
   while (!interrupt_received && keep_running) {
   }

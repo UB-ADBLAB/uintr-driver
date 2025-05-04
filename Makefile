@@ -21,3 +21,9 @@ test_simpl:
 
 test_migration:
 	gcc -mgeneral-regs-only -muintr -pthread tests/simplified_migration.c -o simplified_migration
+
+test_basic:
+	gcc -mgeneral-regs-only -muintr -pthread tests/simplified_unpinned.c -o simplified_unpinned
+
+test_double:
+	gcc -mgeneral-regs-only -muintr -pthread tests/double_register.c -o double_register

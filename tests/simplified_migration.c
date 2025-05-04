@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include "../src/common.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -11,7 +12,6 @@
 #include <sys/sysinfo.h>
 #include <unistd.h>
 #include <x86intrin.h>
-#include "../src/common.h"
 
 static int uintr_fd = -1;
 static volatile int interrupt_received = 0;
@@ -19,22 +19,6 @@ static volatile sig_atomic_t keep_running = 1;
 #define HANDLER_STACK_SIZE (64 * 1024)
 static void *handler_stack = NULL;
 static int uipi_index = -1;
-
-static void cleanup(void) {
-  printf("\nCleaning up...\n");
-  /* Disable interrupts before cleanup */
-  _clui();
-  if (uintr_fd >= 0) {
-    printf("Unregistering handler...\n");
-    ioctl(uintr_fd, UINTR_UNREGISTER_HANDLER, uipi_index);
-    close(uintr_fd);
-    uintr_fd = -1;
-  }
-  if (handler_stack) {
-    free(handler_stack);
-    handler_stack = NULL;
-  }
-}
 
 /* Handler for user interrupts */
 void __attribute__((target("uintr"), interrupt))
@@ -85,14 +69,11 @@ void *sender_thread(void *arg) {
 int main(void) {
   int ret;
   pthread_t sender_tid;
-  int num_cores = get_nprocs();
   struct sigaction act;
 
   memset(&act, 0, sizeof(act));
   act.sa_handler = sigint_handler;
   sigaction(SIGINT, &act, NULL);
-
-  atexit(cleanup);
 
   // Start on core 0
   set_thread_affinity(pthread_self(), 0);
@@ -116,9 +97,9 @@ int main(void) {
 
   // Register interrupt handler
   struct _uintr_handler_args handler_args = {.handler = test_handler,
-                                            .stack = handler_stack,
-                                            .stack_size = HANDLER_STACK_SIZE,
-                                            .flags = 0};
+                                             .stack = handler_stack,
+                                             .stack_size = HANDLER_STACK_SIZE,
+                                             .flags = 0};
 
   printf("Registering handler...\n");
   uipi_index = ioctl(uintr_fd, UINTR_REGISTER_HANDLER, &handler_args);
@@ -133,8 +114,7 @@ int main(void) {
   _stui();
   if (!_testui()) {
     printf("[ERROR] UIF not set after _stui()!\n");
-    cleanup();
-    return EXIT_FAILURE;
+    goto cleanup;
   }
   printf("UIF set successfully. UIF after stui: %u\n", _testui());
 
