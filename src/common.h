@@ -38,5 +38,7 @@ struct _uintr_frame {
 #define UINTR_UNREGISTER_HANDLER _IO('u', 1)
 #define UINTR_CREATE_FD _IOW('u', 2, struct uintr_vector_args)
 #define UINTR_WAIT _IOW('u', 3, struct uintr_wait_args)
+#define UINTR_DUMP_ENTRY _IOW('u', 4, unsigned int)
+#define UINTR_DUMP_MSR _IOW('u', 5, int)
 
 #endif // INCLUDE_SRC_COMMON_H_

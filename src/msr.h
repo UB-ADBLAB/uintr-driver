@@ -8,6 +8,6 @@ void set_cr4_uintr_bit(void);
 void clear_cr4_uintr_bit(void *info);
 
 // LOGGING
-void dump_uintr_msrs(void);
+void dump_uintr_msrs(void *info);
 
 #endif // !_INTEL_UINTR_MSR_H

@@ -31,7 +31,7 @@ irqreturn_t uintr_notification_handler(int irq, void *dev_id) {
     pr_info("UINTR: Notification IRQ %d, RR value: 0x%llx\n", irq, rr_value);
   }
 
-  dump_uintr_msrs();
+  dump_uintr_msrs(NULL);
 
   pr_info("UINTR: User notification received on IRQ %d\n", irq);
   return IRQ_HANDLED;

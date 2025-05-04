@@ -24,7 +24,6 @@ struct uintr_device {
 
 struct uintr_file {
   struct uintr_device *uintr_dev;
-  struct uintr_process_ctx *proc;
   spinlock_t file_lock;
 };
 

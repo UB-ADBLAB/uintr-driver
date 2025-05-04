@@ -38,7 +38,7 @@ void clear_cr4_uintr_bit(void *info) {
   }
 }
 
-void dump_uintr_msrs(void) {
+void dump_uintr_msrs(void *info) {
   u64 handler_val = 0;
   u64 stack_val = 0;
   u64 misc_val = 0;

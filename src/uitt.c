@@ -109,7 +109,7 @@ int uitt_alloc_entry(struct uintr_process_ctx *proc) {
 
   entry = &uitt_mgr->uitt->entries[vector];
   entry->valid = 1;
-  entry->user_vec = vector;
+  entry->user_vec = 0;
   entry->target_upid_addr = (u64)proc->upid;
   proc->uitt_idx = vector;
 

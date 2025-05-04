@@ -52,7 +52,10 @@ void uintr_proc_destroy(struct uintr_process_ctx *ctx) {
 
   // Clear CPU state
   preempt_disable();
-  uintr_clear_state(NULL);
+
+  if (current->pid == ctx->task->pid) {
+    uintr_clear_state(NULL);
+  }
   preempt_enable();
 
   spin_lock(&ctx->ctx_lock);

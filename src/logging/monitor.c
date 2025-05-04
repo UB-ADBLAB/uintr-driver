@@ -16,7 +16,7 @@ void uintr_dump_upid_state(const struct uintr_upid *upid, const char *caller) {
   if (!debug_enabled())
     return;
 
-  pr_debug("UINTR [%s]: UPID State:\n", caller);
+  pr_debug("UINTR [%s]: UPID State (addr %px):\n", caller, upid);
   pr_debug("  Raw memory (64 bytes):");
   print_hex_dump_debug("    ", DUMP_PREFIX_OFFSET, 16, 1, upid,
                        sizeof(struct uintr_upid), true);
