@@ -45,7 +45,6 @@ void uintr_clear_state(void *info) {
   misc_val &= ~(0xFFULL << 32); // Clear notification vector bits
   misc_val |= ((u64)IRQ_VEC_USER << 32);
   wrmsrl(MSR_IA32_UINTR_MISC, misc_val);
-  wrmsrl(MSR_IA32_UINTR_MISC, misc_val);
 
   wrmsrl(MSR_IA32_UINTR_HANDLER, 0);
   wrmsrl(MSR_IA32_UINTR_STACKADJUST, 0);
@@ -84,7 +83,7 @@ inline u32 cpu_to_ndst(int cpu) {
   return apicid;
 }
 
-int uintr_init_state(struct uintr_process_ctx *ctx, struct uintr_device *dev) {
+int uintr_create_upid(uintr_process_ctx *ctx) {
   struct task_struct *task;
   struct uintr_upid *upid;
   int cpu;

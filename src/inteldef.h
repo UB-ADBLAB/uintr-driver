@@ -1,6 +1,7 @@
 #ifndef _UINTR_TYPES_H
 #define _UINTR_TYPES_H
 
+#include "common.h"
 #include <linux/list.h>
 #include <linux/spinlock.h>
 #include <linux/types.h>
@@ -61,22 +62,16 @@ struct uintr_state {
   u64 uitt_addr;
 } __packed;
 
-struct uintr_vector_ctx {
-  struct list_head node;
-  __u32 vector;
-  struct uintr_uitt_entry *uitte;
-  struct uintr_process_ctx *proc;
-};
-
-struct uintr_process_ctx {
+typedef struct {
   struct task_struct *task;
   void *handler;
   int phys_core;
+  uintr_receiver_id_t receiver_id;
   struct uintr_state state;
   struct uintr_upid *upid;
   bool handler_active;
   int uitt_idx;
   spinlock_t ctx_lock;
-};
+} uintr_process_ctx;
 
 #endif

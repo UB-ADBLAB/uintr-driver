@@ -7,7 +7,7 @@
 /* Structure to store process context mapping */
 struct uintr_proc_mapping {
   pid_t pid;
-  struct uintr_process_ctx *proc;
+  uintr_process_ctx *proc;
   struct hlist_node node;
 };
 
@@ -18,10 +18,10 @@ int uintr_sched_trace_init(void);
 void uintr_sched_trace_cleanup(void);
 
 // Register a process context to be monitored for CPU migrations
-int uintr_sched_trace_register_proc(struct uintr_process_ctx *proc);
+int uintr_sched_trace_register_proc(uintr_process_ctx *proc);
 
 // Unregister a process context from migration monitoring
-void uintr_sched_trace_unregister_proc(struct uintr_process_ctx *proc);
+void uintr_sched_trace_unregister_proc(uintr_process_ctx *proc);
 
 struct uintr_proc_mapping *find_proc_mapping(pid_t pid);
 

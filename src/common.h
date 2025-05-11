@@ -6,7 +6,15 @@
 // TODO: this is dumb
 #ifndef __KERNEL__
 #include <stddef.h>
+#include <stdint.h>
 #endif
+
+#define UINTR_HANDLER_FLAG_STACK 0x1;
+
+#define OS_ABI_REDZONE 128
+
+typedef uint64_t uintr_receiver_id_t;
+typedef uint64_t uintr_sender_id_t;
 
 struct _uintr_handler_args {
   void *handler;
@@ -15,15 +23,11 @@ struct _uintr_handler_args {
   unsigned int flags;
 };
 
-struct _uintr_vector_args {
+typedef struct {
+  uintr_receiver_id_t receiver_id;
   unsigned int vector;
   unsigned int flags;
-};
-
-struct _uintr_wait_args {
-  unsigned long timeout_us;
-  unsigned int flags;
-};
+} _uintr_sender_args;
 
 struct _uintr_frame {
   unsigned long rip;
@@ -36,9 +40,8 @@ struct _uintr_frame {
 
 #define UINTR_REGISTER_HANDLER _IOW('u', 0, struct _uintr_handler_args)
 #define UINTR_UNREGISTER_HANDLER _IO('u', 1)
-#define UINTR_CREATE_FD _IOW('u', 2, struct uintr_vector_args)
-#define UINTR_WAIT _IOW('u', 3, struct uintr_wait_args)
-#define UINTR_DUMP_ENTRY _IOW('u', 4, unsigned int)
-#define UINTR_DUMP_MSR _IOW('u', 5, int)
+#define UINTR_REGISTER_SENDER _IOW('u', 2, _uintr_sender_args)
+#define UINTR_UNREGISTER_SENDER _IOW('u', 3, uintr_sender_id_t)
+#define UINTR_DEBUG _IO('u', 4)
 
 #endif // INCLUDE_SRC_COMMON_H_

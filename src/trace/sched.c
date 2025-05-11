@@ -17,7 +17,7 @@
 
 /* Function to save CPU state (to be called on the source CPU) */
 static void save_cpu_state_fn(void *info) {
-  struct uintr_process_ctx *proc = (struct uintr_process_ctx *)info;
+  uintr_process_ctx *proc = (uintr_process_ctx *)info;
   if (!proc)
     return;
 
@@ -34,14 +34,14 @@ static void save_cpu_state_fn(void *info) {
 
 /* Function to restore CPU state (to be called on the destination CPU) */
 static void restore_cpu_state_fn(void *info) {
-  struct uintr_process_ctx *proc = (struct uintr_process_ctx *)info;
+  uintr_process_ctx *proc = (uintr_process_ctx *)info;
   if (!proc)
     return;
 
   int cpu = smp_processor_id();
 
-  pr_info("UINTR: Restoring CPU state on %d from CPU %d for UPID %d", cpu,
-          proc->phys_core, proc->uitt_idx);
+  pr_info("UINTR: Restoring CPU state on %d from CPU %d for receiver id %llu\n", cpu,
+          proc->phys_core, proc->receiver_id);
   proc->phys_core = cpu;
 
   /* Restore the CPU state from the process context */
@@ -76,7 +76,7 @@ struct uintr_proc_mapping *find_proc_mapping(pid_t pid) {
 static void uintr_trace_sched_migrate_task(void *data, struct task_struct *p,
                                            int dest_cpu) {
   struct uintr_proc_mapping *mapping;
-  struct uintr_process_ctx *proc;
+  uintr_process_ctx *proc;
   u32 new_ndst;
   unsigned long flags;
   pid_t pid = p->pid;
@@ -208,7 +208,7 @@ void uintr_sched_trace_cleanup(void) {
   pr_info("UINTR: Scheduler tracing cleaned up\n");
 }
 
-int uintr_sched_trace_register_proc(struct uintr_process_ctx *proc) {
+int uintr_sched_trace_register_proc(uintr_process_ctx *proc) {
   struct uintr_proc_mapping *mapping;
   unsigned long flags;
 
@@ -255,7 +255,7 @@ int uintr_sched_trace_register_proc(struct uintr_process_ctx *proc) {
   return 0;
 }
 
-void uintr_sched_trace_unregister_proc(struct uintr_process_ctx *proc) {
+void uintr_sched_trace_unregister_proc(uintr_process_ctx *proc) {
   struct uintr_proc_mapping *mapping;
   unsigned long flags;
 

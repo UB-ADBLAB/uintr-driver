@@ -10,22 +10,22 @@ static inline bool debug_enabled(void) {
 
 void uintr_dump_upid_state(const struct uintr_upid *upid, const char *caller) {
   if (!upid) {
-    pr_debug("UINTR [%s]: UPID is NULL\n", caller);
+    pr_info("UINTR [%s]: UPID is NULL\n", caller);
     return;
   }
   if (!debug_enabled())
     return;
 
-  pr_debug("UINTR [%s]: UPID State (addr %px):\n", caller, upid);
-  pr_debug("  Raw memory (64 bytes):");
+  pr_info("UINTR [%s]: UPID State (addr %px):\n", caller, upid);
+  pr_info("  Raw memory (64 bytes):");
   print_hex_dump_debug("    ", DUMP_PREFIX_OFFSET, 16, 1, upid,
                        sizeof(struct uintr_upid), true);
 
-  pr_debug("  Status: %s (0x%x)\n", get_status_str(upid->nc.status),
-           upid->nc.status);
-  pr_debug("  Notification Vector: 0x%x\n", upid->nc.nv);
-  pr_debug("  Notification Dest: 0x%x\n", upid->nc.ndst);
-  pr_debug("  Posted Interrupts: 0x%llx\n", upid->puir);
+  pr_info("  Status: %s (0x%x)\n", get_status_str(upid->nc.status),
+          upid->nc.status);
+  pr_info("  Notification Vector: 0x%x\n", upid->nc.nv);
+  pr_info("  Notification Dest: 0x%x\n", upid->nc.ndst);
+  pr_info("  Posted Interrupts: 0x%llx\n", upid->puir);
 }
 
 char *get_status_str(u8 status) {

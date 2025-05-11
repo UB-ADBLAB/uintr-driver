@@ -1,5 +1,5 @@
 obj-m := intel-uintr.o
-intel-uintr-objs := src/init.o src/fops.o src/state.o src/proc.o src/uitt.o src/msr.o src/logging/monitor.o src/irq.o src/trace/sched.o src/checks.o
+intel-uintr-objs := src/init.o src/fops.o src/state.o src/proc.o src/uitt.o src/msr.o src/logging/monitor.o src/irq.o src/trace/sched.o src/checks.o src/mappings/id_mapping.o src/mappings/uitt_mapping.o src/handlers.o
 
 KERNELDIR ?= /lib/modules/$(shell uname -r)/build/
 PWD := $(shell pwd)
@@ -16,14 +16,5 @@ load: all
 	sudo insmod intel-uintr.ko
 	sudo chmod 666 /dev/uintr
 
-test_simpl:
-	gcc -g -mgeneral-regs-only -muintr -pthread tests/simplified_pinned.c -o simplified_pinned
-
-test_migration:
-	gcc -mgeneral-regs-only -muintr -pthread tests/simplified_migration.c -o simplified_migration
-
-test_basic:
-	gcc -mgeneral-regs-only -muintr -pthread tests/simplified_unpinned.c -o simplified_unpinned
-
-test_double:
-	gcc -mgeneral-regs-only -muintr -pthread tests/double_register.c -o double_register
+test:
+	gcc -g -mgeneral-regs-only -muintr -pthread tests/new_pinned.c -o pinned

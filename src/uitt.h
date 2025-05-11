@@ -16,31 +16,23 @@ struct uintr_uitt_entry {
 } __packed __aligned(16);
 
 struct uintr_uitt {
-  struct uintr_uitt_entry *entries;
   unsigned int size;
+  struct uintr_uitt_entry *entries;
 };
 
-struct uintr_uitt_manager {
-  struct uintr_uitt *uitt;
-  DECLARE_BITMAP(allocated_idx, UINTR_MAX_UVEC_NR);
-  spinlock_t lock;
-};
+int register_sender(uintr_receiver_id_t receiver_id, int vector);
+int unregister_sender(int idx);
 
-struct uintr_process_ctx *uitt_get_proc_ctx(unsigned int idx);
-void uitt_set_proc_ctx(unsigned int idx, struct uintr_process_ctx *proc);
+uintr_receiver_id_t generate_receiver_id(uintr_process_ctx *ctx);
 
-int uitt_init(void);
+int uitt_find_empty_idx(struct uintr_uitt *uitt);
 
-void uitt_cleanup(void);
+struct uintr_uitt *uitt_init(struct task_struct *task);
 
-int uitt_alloc_entry(struct uintr_process_ctx *proc);
-
-int uitt_free_entry(unsigned int idx);
+void uitt_cleanup(struct uintr_uitt *uitt);
 
 // logging
 void uintr_dump_uitt_entry_state(const struct uintr_uitt_entry *entry, int idx,
                                  const char *caller);
-
-void uintr_dump_uitt_state(const char *caller);
 
 #endif
