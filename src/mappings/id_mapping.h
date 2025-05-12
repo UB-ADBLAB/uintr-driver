@@ -25,6 +25,6 @@ int add_process_ctx_mapping(uintr_receiver_id_t id, uintr_process_ctx *ctx);
 void remove_process_ctx_mapping(uintr_receiver_id_t id);
 
 // Function to clean up all mappings for a specific context
-void remove_all_mappings_for_ctx(uintr_process_ctx *ctx);
+void remove_all_recid_mappings_for_ctx(uintr_process_ctx *ctx);
 
 #endif // INCLUDE_SRC_ID_MAPPING_H_

@@ -1,6 +1,6 @@
+#include "id_mapping.h"
 #include "../common.h"
 #include "../inteldef.h"
-#include "id_mapping.h"
 #include <linux/hashtable.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
@@ -70,7 +70,7 @@ void remove_process_ctx_mapping(uintr_receiver_id_t id) {
 }
 
 // Function to clean up all mappings for a specific context
-void remove_all_mappings_for_ctx(uintr_process_ctx *ctx) {
+void remove_all_recid_mappings_for_ctx(uintr_process_ctx *ctx) {
   struct receiver_id_mapping *mapping;
   struct hlist_node *tmp;
   unsigned long flags;

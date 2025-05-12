@@ -4,7 +4,7 @@
 #include "irq.h"
 #include "logging/monitor.h"
 #include "mappings/id_mapping.h"
-#include "mappings/uitt_mapping.h"
+#include "mappings/proc_mapping.h"
 #include "msr.h"
 #include <asm/io.h>
 #include <linux/slab.h>
@@ -27,6 +27,8 @@ int unregister_sender(int idx) {
 
 int register_sender(uintr_receiver_id_t receiver_id, int vector) {
   uintr_process_ctx *ctx;
+  struct uintr_uitt *uitt = NULL;
+  struct uintr_proc_mapping *map;
 
   // get the process context based off the receiver_id
   // we need the ctx to find the upid address which is required in the
@@ -41,13 +43,19 @@ int register_sender(uintr_receiver_id_t receiver_id, int vector) {
   uintr_dump_upid_state(ctx->upid, "register_sender");
 
   // must look up the target uitt where we are placing the entry
-  struct uintr_uitt *uitt = find_uitt_by_pid(current->pid);
+  map = find_proc_mapping(current->pid);
 
-  // if it doesn't exist, it means this is the first time we are registering a
-  // sender from this task, meaning we must init the uitt before adding the
-  // entry.
-  if (!uitt) {
+  if (map && map->uitt) {
+    uitt = map->uitt;
+  } else {
+    // if it doesn't exist, it means this is the first time we are registering a
+    // sender from this task, meaning we must init the uitt before adding the
+    // entry.
     uitt = uitt_init(current);
+    if (!uitt) {
+      pr_err("UINTR: Failed to initialzie UITT for PID %d\n", current->pid);
+      return -ENOMEM;
+    }
   }
 
   // create the entry which will be placed in the uitt
@@ -95,6 +103,7 @@ struct uintr_uitt *uitt_init(struct task_struct *task) {
   size_t uitt_size;
   struct uintr_uitt_entry *uitt_base;
   struct uintr_uitt *uitt;
+  int ret;
 
   uintr_max_uitt_entries = 64;
   uitt_size = uintr_max_uitt_entries * sizeof(struct uintr_uitt_entry);
@@ -122,8 +131,13 @@ struct uintr_uitt *uitt_init(struct task_struct *task) {
   pr_info("UINTR: UITT created for PID: %d at 0x%px\n", task->pid, uitt);
   pr_info("UINTR: UITT aligned to %lu bytes\n", PAGE_SIZE);
 
-  // TODO: should this be included in the state some how?
-  add_uitt_mapping(task->pid, uitt);
+  add_proc_sender_mapping(task->pid, uitt);
+  if (ret < 0) {
+    pr_err("UINTR: Failed to add sender mapping for PID %d\n", task->pid);
+    free_pages((unsigned long)uitt_base, get_order(uitt_size));
+    kfree(uitt);
+    return ERR_PTR(ret);
+  }
 
   wrmsrl(MSR_IA32_UINTR_TT, (u64)uitt->entries | 1);
 

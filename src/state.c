@@ -12,18 +12,6 @@
 #include <linux/slab.h>
 #include <linux/types.h>
 
-void uintr_save_state(struct uintr_state *state) {
-  if (!state)
-    return;
-
-  rdmsrl(MSR_IA32_UINTR_HANDLER, state->handler);
-  rdmsrl(MSR_IA32_UINTR_STACKADJUST, state->stack_adjust);
-  rdmsrl(MSR_IA32_UINTR_MISC, *(u64 *)&state->misc);
-  rdmsrl(MSR_IA32_UINTR_PD, state->upid_addr);
-  rdmsrl(MSR_IA32_UINTR_TT, state->uitt_addr);
-  rdmsrl(MSR_IA32_UINTR_RR, state->uirr);
-}
-
 void uintr_restore_state(struct uintr_state *state) {
   if (!state)
     return;

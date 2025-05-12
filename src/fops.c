@@ -7,7 +7,7 @@
 #include "linux/smp.h"
 #include "linux/spinlock.h"
 #include "logging/monitor.h"
-#include "mappings/uitt_mapping.h"
+#include "mappings/proc_mapping.h"
 #include "msr.h"
 #include "proc.h"
 #include "state.h"
@@ -60,7 +60,6 @@ long uintr_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
     break;
   }
   case UINTR_DEBUG: {
-    struct uintr_uitt *uitt = find_uitt_by_pid(current->pid);
     break;
   }
   default:

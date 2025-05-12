@@ -4,10 +4,10 @@
 #include "linux/uaccess.h"
 #include "logging/monitor.h"
 #include "mappings/id_mapping.h"
+#include "mappings/proc_mapping.h"
 #include "msr.h"
 #include "proc.h"
 #include "state.h"
-#include "trace/sched.h"
 #include <asm/io.h>
 #include <linux/bits.h>
 #include <linux/kthread.h>
@@ -93,7 +93,7 @@ uintr_receiver_id_t register_handler(struct _uintr_handler_args *handler_args) {
           (u64)handler_args->handler);
 
   // register handler scheduler
-  ret = uintr_sched_trace_register_proc(ctx);
+  ret = add_proc_handler_mapping(ctx->task->pid, ctx);
   if (ret < 0) {
     pr_warn("UINTR: Failed to register process for scheduler tracing: %d\n",
             ret);

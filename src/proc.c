@@ -1,6 +1,7 @@
 #include "proc.h"
 #include "inteldef.h"
 #include "logging/monitor.h"
+#include "mappings/proc_mapping.h"
 #include "state.h"
 #include "trace/sched.h"
 #include "uitt.h"
@@ -37,12 +38,6 @@ uintr_process_ctx *uintr_create_ctx(struct task_struct *task) {
     return NULL;
   }
 
-  ret = uintr_sched_trace_register_proc(ctx);
-  if (ret < 0) {
-    pr_warn("UINTR: Failed to register for scheduler tracing: %d\n", ret);
-    return NULL;
-  }
-
   memset(&ctx->state, 0, sizeof(struct uintr_state));
 
   return ctx;
@@ -52,7 +47,7 @@ void uintr_destroy_ctx(uintr_process_ctx *ctx) {
   if (!ctx)
     return;
 
-  uintr_sched_trace_unregister_proc(ctx);
+  remove_all_mappings_for_ctx(ctx);
 
   // Clear CPU state
   preempt_disable();
