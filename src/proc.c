@@ -10,6 +10,7 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 
+// TODO: this function should have better erroring. (?)
 uintr_process_ctx *uintr_create_ctx(struct task_struct *task) {
   uintr_process_ctx *ctx;
   int ret;
@@ -24,7 +25,11 @@ uintr_process_ctx *uintr_create_ctx(struct task_struct *task) {
     pr_err("UINTR: Failed to allocate memory for process context!");
     return NULL;
   }
+
+  spin_lock_init(&ctx->ctx_lock);
   ctx->task = task;
+  ctx->handler_active = 0;
+  ctx->handler = NULL;
 
   ret = uintr_create_upid(ctx);
   if (ret < 0) {
@@ -35,8 +40,10 @@ uintr_process_ctx *uintr_create_ctx(struct task_struct *task) {
   ret = uintr_sched_trace_register_proc(ctx);
   if (ret < 0) {
     pr_warn("UINTR: Failed to register for scheduler tracing: %d\n", ret);
-    // TODO: maybe error out instead.
+    return NULL;
   }
+
+  memset(&ctx->state, 0, sizeof(struct uintr_state));
 
   return ctx;
 }

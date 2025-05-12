@@ -91,7 +91,6 @@ int uintr_create_upid(uintr_process_ctx *ctx) {
     return -EINVAL;
 
   task = ctx->task;
-  spin_lock_init(&ctx->ctx_lock);
 
   upid = kzalloc(sizeof(*upid), GFP_KERNEL);
 
@@ -111,13 +110,8 @@ int uintr_create_upid(uintr_process_ctx *ctx) {
   ctx->upid->nc.ndst = cpu_to_ndst(cpu);
   ctx->upid->nc.nv = IRQ_VEC_USER;
 
-  ctx->handler_active = 0;
-  ctx->handler = NULL;
-
   pr_info("UINTR: Initalized UPID for process %d on CPU %d (APIC ID: %u)\n",
           task->pid, task_cpu(task), ctx->upid->nc.ndst);
-
-  memset(&ctx->state, 0, sizeof(struct uintr_state));
 
   return 0;
 }
