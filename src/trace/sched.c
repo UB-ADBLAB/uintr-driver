@@ -23,7 +23,7 @@ static void save_cpu_state_fn(void *info) {
 
   int cpu = smp_processor_id();
 
-  pr_info("UINTR: Saving CPU state on %d for UPID %d", cpu, proc->uitt_idx);
+  pr_info("UINTR: Saving CPU state on %d\n", cpu);
   dump_uintr_msrs(NULL);
 
   /* Save the current CPU state to the process context */
@@ -40,8 +40,8 @@ static void restore_cpu_state_fn(void *info) {
 
   int cpu = smp_processor_id();
 
-  pr_info("UINTR: Restoring CPU state on %d from CPU %d for receiver id %llu\n", cpu,
-          proc->phys_core, proc->receiver_id);
+  pr_info("UINTR: Restoring CPU state on %d from CPU %d for receiver id %llu\n",
+          cpu, proc->phys_core, proc->receiver_id);
   proc->phys_core = cpu;
 
   /* Restore the CPU state from the process context */

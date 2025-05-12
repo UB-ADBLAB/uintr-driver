@@ -62,6 +62,8 @@ struct uintr_state {
   u64 uitt_addr;
 } __packed;
 
+// TODO: this struct should be modified to make the split between
+// roles more intuitive.
 typedef struct {
   struct task_struct *task;
   void *handler;
@@ -70,7 +72,6 @@ typedef struct {
   struct uintr_state state;
   struct uintr_upid *upid;
   bool handler_active;
-  int uitt_idx;
   spinlock_t ctx_lock;
 } uintr_process_ctx;
 
