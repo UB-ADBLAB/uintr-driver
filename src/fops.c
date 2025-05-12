@@ -43,7 +43,7 @@ long uintr_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
     break;
   }
   case UINTR_UNREGISTER_HANDLER: {
-    unsigned int idx = (unsigned int)arg;
+    uintr_receiver_id_t idx = arg;
     ret = unregister_handler(idx);
     break;
   }
@@ -55,8 +55,8 @@ long uintr_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
     break;
   }
   case UINTR_UNREGISTER_SENDER: {
-    uintr_sender_id_t sender_id = (uintr_sender_id_t)arg;
-    ret = unregister_sender(sender_id);
+    int idx = (int)arg;
+    ret = unregister_sender(idx);
     break;
   }
   case UINTR_DEBUG: {

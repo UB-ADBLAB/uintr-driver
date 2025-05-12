@@ -10,6 +10,9 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
+// TODO: arg structs don't have to be used in the uapi. Changing to build the
+// structs in their respective function may be a good idea for clarity
+
 uintr_receiver_id_t
 uintr_register_handler(struct _uintr_handler_args handler_args) {
   int uintr_fd;
@@ -23,6 +26,19 @@ uintr_register_handler(struct _uintr_handler_args handler_args) {
 
   close(uintr_fd);
   return id;
+}
+
+int uintr_unregister_handler(uintr_receiver_id_t receiver_id) {
+  int uintr_fd;
+  uintr_fd = open("/dev/uintr", O_RDWR);
+  if (uintr_fd < 0) {
+    return EXIT_FAILURE;
+  }
+
+  ioctl(uintr_fd, UINTR_UNREGISTER_HANDLER, receiver_id);
+
+  close(uintr_fd);
+  return 0;
 }
 
 int uintr_register_sender(_uintr_sender_args sender_args) {
@@ -40,4 +56,17 @@ int uintr_register_sender(_uintr_sender_args sender_args) {
   return id;
 }
 
+int uintr_unregister_sender(int idx) {
+  int uintr_fd;
+
+  uintr_fd = open("/dev/uintr", O_RDWR);
+  if (uintr_fd < 0) {
+    return EXIT_FAILURE;
+  }
+
+  ioctl(uintr_fd, UINTR_UNREGISTER_SENDER, idx);
+
+  close(uintr_fd);
+  return 0;
+}
 #endif
