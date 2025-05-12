@@ -31,7 +31,7 @@ long uintr_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
 
   switch (cmd) {
   case UINTR_REGISTER_HANDLER: {
-    struct _uintr_handler_args handler_args;
+    _uintr_handler_args handler_args;
 
     if (copy_from_user(&handler_args, (void __user *)arg,
                        sizeof(handler_args))) {

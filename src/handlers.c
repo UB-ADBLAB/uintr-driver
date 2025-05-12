@@ -13,7 +13,7 @@
 #include <linux/kthread.h>
 #include <linux/slab.h>
 
-uintr_receiver_id_t register_handler(struct _uintr_handler_args *handler_args) {
+uintr_receiver_id_t register_handler(_uintr_handler_args *handler_args) {
   uintr_receiver_id_t id;
   uintr_process_ctx *ctx;
   u64 stack_addr, misc_val;
@@ -120,6 +120,7 @@ int unregister_handler(uintr_receiver_id_t id) {
   uintr_process_ctx *ctx;
 
   ctx = find_process_ctx_by_id(id);
+
   // TODO: must also remove all uitt that was associated
   if (ctx) {
     uintr_destroy_ctx(ctx);

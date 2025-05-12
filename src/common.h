@@ -16,12 +16,12 @@
 typedef uint64_t uintr_receiver_id_t;
 typedef uint64_t uintr_sender_id_t;
 
-struct _uintr_handler_args {
+typedef struct {
   void *handler;
   void *stack;
   size_t stack_size;
   unsigned int flags;
-};
+} _uintr_handler_args;
 
 typedef struct {
   uintr_receiver_id_t receiver_id;
@@ -38,7 +38,7 @@ struct _uintr_frame {
   unsigned long vector;
 };
 
-#define UINTR_REGISTER_HANDLER _IOW('u', 0, struct _uintr_handler_args)
+#define UINTR_REGISTER_HANDLER _IOW('u', 0, _uintr_handler_args)
 #define UINTR_UNREGISTER_HANDLER _IO('u', 1)
 #define UINTR_REGISTER_SENDER _IOW('u', 2, _uintr_sender_args)
 #define UINTR_UNREGISTER_SENDER _IOW('u', 3, uintr_sender_id_t)
