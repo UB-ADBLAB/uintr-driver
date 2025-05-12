@@ -29,7 +29,8 @@ uintr_process_ctx *uintr_create_ctx(struct task_struct *task) {
 
   spin_lock_init(&ctx->ctx_lock);
   ctx->task = task;
-  ctx->handler_active = 0;
+  ctx->uif = false;
+  ctx->handler_active = false;
   ctx->handler = NULL;
 
   ret = uintr_create_upid(ctx);

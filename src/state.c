@@ -94,7 +94,6 @@ int uintr_create_upid(uintr_process_ctx *ctx) {
   // Initialize UPID
   ctx->upid->nc.status = 0;
   ctx->upid->puir = 0;
-  ctx->phys_core = cpu; // TODO:
   ctx->upid->nc.ndst = cpu_to_ndst(cpu);
   ctx->upid->nc.nv = IRQ_VEC_USER;
 

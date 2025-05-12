@@ -1,4 +1,5 @@
 #include "sched.h"
+#include "../asm.h"
 #include "../inteldef.h"
 #include "../logging/monitor.h"
 #include "../mappings/proc_mapping.h"
@@ -42,6 +43,7 @@ static void save_cpu_state_fn(void *info) {
 
     // update ndst to new cpu
     ctx->upid->nc.ndst = cpu_to_ndst(mig_info->dest_cpu);
+    ctx->uif = _testui();
 
     rdmsrl(MSR_IA32_UINTR_HANDLER, ctx->state.handler);
     rdmsrl(MSR_IA32_UINTR_STACKADJUST, ctx->state.stack_adjust);
@@ -51,6 +53,7 @@ static void save_cpu_state_fn(void *info) {
 
     // currently unused
     rdmsrl(MSR_IA32_UINTR_TT, ctx->state.uitt_addr);
+    uintr_dump_upid_state(ctx->upid, "migration");
     dump_uintr_msrs(NULL);
   }
 }
@@ -65,12 +68,19 @@ static void restore_cpu_state_fn(void *info) {
   }
 
   if (mapping->ctx) {
-    struct uintr_state state = mapping->ctx->state;
-    wrmsrl(MSR_IA32_UINTR_HANDLER, state.handler);
-    wrmsrl(MSR_IA32_UINTR_STACKADJUST, state.stack_adjust);
-    wrmsrl(MSR_IA32_UINTR_MISC, *(u64 *)&state.misc);
-    wrmsrl(MSR_IA32_UINTR_PD, state.upid_addr);
-    wrmsrl(MSR_IA32_UINTR_RR, state.uirr);
+    uintr_process_ctx *ctx = mapping->ctx;
+    wrmsrl(MSR_IA32_UINTR_HANDLER, ctx->state.handler);
+    wrmsrl(MSR_IA32_UINTR_STACKADJUST, ctx->state.stack_adjust);
+    wrmsrl(MSR_IA32_UINTR_MISC, *(u64 *)&ctx->state.misc);
+    wrmsrl(MSR_IA32_UINTR_PD, ctx->state.upid_addr);
+    wrmsrl(MSR_IA32_UINTR_RR, ctx->state.uirr);
+
+    // Update UIF
+    if (ctx->uif) {
+      _stui();
+    } else {
+      _clui();
+    }
   }
 
   if (mapping->uitt) {
@@ -87,15 +97,14 @@ static void uintr_trace_sched_switch(void *data, bool preempt,
    * When a task switch occurs, check if the next task needs UINTR state updated
    * on the current CPU
    */
-  uintr_update_cpu_state(next);
+  // uintr_update_cpu_state(next);
 }
 
 /* Tracepoint handler for sched_migrate_task */
 static void uintr_trace_sched_migrate_task(void *data, struct task_struct *p,
                                            int dest_cpu) {
   struct uintr_proc_mapping *mapping;
-  uintr_process_ctx *proc;
-  int source_cpu, new_ndst;
+  int source_cpu;
   pid_t pid = p->pid;
 
   mapping = find_proc_mapping(pid);
@@ -103,21 +112,33 @@ static void uintr_trace_sched_migrate_task(void *data, struct task_struct *p,
     return; // process is not a pid we are tracking, ignore
   }
 
-  struct migration_info info = {
-      .dest_cpu = dest_cpu,
-      .map = mapping,
-  };
+  struct migration_info *info = kmalloc(sizeof(*info), GFP_ATOMIC);
+  if (!info) {
+    pr_err("UINTR: Failed to allocate migration info\n");
+    return;
+  }
+
+  info->dest_cpu = dest_cpu;
+  info->map = mapping;
 
   source_cpu = task_cpu(p);
 
   /*Must save CPU state here and then reload on the new cpu.*/
-  smp_call_function_single(source_cpu, save_cpu_state_fn, &info, 1);
+  smp_call_function_single(source_cpu, save_cpu_state_fn, info, 1);
 
-  pr_info("UINTR: Tracked process %d migrated to CPU %d from CPU %d\n", pid,
+  pr_info("UINTR: Tracked process %d migrated from CPU %d to CPU %d\n", pid,
           source_cpu, dest_cpu);
 
   // restore state on our dest_cpu
-  smp_call_function_single(dest_cpu, restore_cpu_state_fn, mapping, 1);
+  if (smp_processor_id() == dest_cpu) {
+    // If we're on the destination CPU, call the function directly
+    restore_cpu_state_fn(mapping);
+  } else {
+    // Otherwise, use smp_call_function_single
+    smp_call_function_single(dest_cpu, restore_cpu_state_fn, mapping, 1);
+  }
+
+  kfree(info);
 
   pr_info("UINTR: State restored for PID %d to CPU %d\n", pid, dest_cpu);
 }

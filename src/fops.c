@@ -60,6 +60,7 @@ long uintr_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
     break;
   }
   case UINTR_DEBUG: {
+    dump_uintr_msrs(NULL);
     break;
   }
   default:

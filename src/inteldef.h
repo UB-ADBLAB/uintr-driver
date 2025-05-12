@@ -39,8 +39,8 @@ struct uintr_upid {
   u64 puir;
 } __aligned(64);
 
-/* xstate structure - 48 byte total */
-/* See Intel SDM 13.5.11 */
+// TODO: xstate isn't possible with a driver model. Modifying this state to be
+// more specific to our implementation is needed.
 struct uintr_state {
   u64 handler;
   u64 stack_adjust;
@@ -62,16 +62,13 @@ struct uintr_state {
   u64 uitt_addr;
 } __packed;
 
-// TODO: this struct should be modified to make the split between
-// roles more intuitive.
 typedef struct {
   struct task_struct *task;
   void *handler;
-  int phys_core;
-  uintr_receiver_id_t receiver_id;
   struct uintr_state state;
   struct uintr_upid *upid;
-  bool handler_active;
+  bool handler_active; // unused. may be useful for multiple handlers
+  bool uif;
   spinlock_t ctx_lock;
 } uintr_process_ctx;
 

@@ -69,4 +69,18 @@ int uintr_unregister_sender(int idx) {
   close(uintr_fd);
   return 0;
 }
+
+int uintr_debug(void) {
+  int uintr_fd;
+
+  uintr_fd = open("/dev/uintr", O_RDWR);
+  if (uintr_fd < 0) {
+    return EXIT_FAILURE;
+  }
+
+  ioctl(uintr_fd, UINTR_DEBUG);
+
+  close(uintr_fd);
+  return 0;
+}
 #endif
