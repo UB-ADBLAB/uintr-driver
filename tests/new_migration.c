@@ -88,6 +88,8 @@ void *sender_thread(void *arg) {
   _senduipi(idx);
   printf("User interrupt sent...\n");
 
+  uintr_unregister_sender(idx);
+
   return NULL;
 }
 
@@ -164,6 +166,10 @@ int main(void) {
 
 cleanup:
   _clui();
+
+  if (receiver_id) {
+    uintr_unregister_handler(receiver_id);
+  }
 
   return ret;
 }
