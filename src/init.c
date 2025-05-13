@@ -29,15 +29,6 @@
 static struct uintr_device *uintr_dev;
 
 u32 uintr_max_uitt_entries;
-u64 uintr_uitt_base_addr;
-
-static void uintr_configure_core(void *info) {
-  u64 uintr_addr = (u64)info;
-
-  // Set MSRs and CR4
-  set_ia32_uintr_tt(uintr_addr);
-  set_cr4_uintr_bit();
-}
 
 static int __init uintr_init(void) {
   int ret;
@@ -50,17 +41,13 @@ static int __init uintr_init(void) {
   if (ret < 0)
     return ret;
 
-  ret = uitt_init();
-  if (ret < 0)
-    return ret;
-
   ret = uintr_sched_trace_init();
   if (ret < 0) {
     pr_err("UINTR: Failed to initialize scheduler tracing\n");
     return ret;
   }
 
-  on_each_cpu(uintr_configure_core, (void *)uintr_uitt_base_addr, 1);
+  on_each_cpu(set_cr4_uintr_bit, NULL, 1);
 
   uintr_dev = kzalloc(sizeof(*uintr_dev), GFP_KERNEL);
   if (!uintr_dev)
@@ -94,7 +81,8 @@ static int __init uintr_init(void) {
 
 static void __exit uintr_exit(void) {
 
-  // TODO: do we need to suppress interrupts first?
+  // WARN: do we need to suppress interrupts first?
+
   uintr_sched_trace_cleanup();
 
   pr_info("UINTR: Disabling user interrupts on all CPUs\n");
@@ -112,7 +100,7 @@ static void __exit uintr_exit(void) {
   synchronize_irq(IRQ_VEC_USER);
   synchronize_rcu();
 
-  uitt_cleanup();
+  // TODO: iterate through all uitts, free them.
 
   // Unregister device
   if (uintr_dev) {

@@ -1,8 +1,11 @@
 #include "sched.h"
+#include "../asm.h"
 #include "../inteldef.h"
 #include "../logging/monitor.h"
+#include "../mappings/proc_mapping.h"
 #include "../msr.h"
 #include "../state.h"
+#include "asm/paravirt.h"
 #include "linux/smp.h"
 #include <asm/apic.h>
 #include <asm/apicdef.h>
@@ -13,155 +16,195 @@
 #include <linux/tracepoint.h>
 #include <trace/events/sched.h>
 
-#define UINTR_PROC_HASH_BITS 6 /* 2^6 = 64 buckets for 64 entries */
+struct migration_info {
+  struct uintr_proc_mapping *map;
+  int dest_cpu;
+};
 
 /* Function to save CPU state (to be called on the source CPU) */
 static void save_cpu_state_fn(void *info) {
-  struct uintr_process_ctx *proc = (struct uintr_process_ctx *)info;
-  if (!proc)
+  struct migration_info *mig_info = (struct migration_info *)info;
+
+  if (!mig_info || !mig_info->map) {
+    pr_warn("UINTR: save_cpu_state_fn called with bad args!\n");
     return;
+  }
 
-  int cpu = smp_processor_id();
+  if (mig_info->map->ctx) {
+    uintr_process_ctx *ctx = mig_info->map->ctx;
 
-  pr_info("UINTR: Saving CPU state on %d for UPID %d", cpu, proc->uitt_idx);
-  dump_uintr_msrs(NULL);
+    if (!ctx->upid) {
+      pr_warn("UINTR: Process context has NULL UPID\n");
+      return;
+    }
 
-  /* Save the current CPU state to the process context */
-  uintr_save_state(&proc->state);
-  print_hex_dump_debug("    ", DUMP_PREFIX_OFFSET, 16, 1, &proc->state,
-                       sizeof(struct uintr_state), true);
+    pr_info("UINTR: Saving CPU state for process %d, migrating to CPU %d\n",
+            ctx->task->pid, mig_info->dest_cpu);
+
+    // update ndst to new cpu
+    ctx->upid->nc.ndst = cpu_to_ndst(mig_info->dest_cpu);
+    ctx->uif = _testui();
+
+    rdmsrl(MSR_IA32_UINTR_HANDLER, ctx->state.handler);
+    rdmsrl(MSR_IA32_UINTR_STACKADJUST, ctx->state.stack_adjust);
+    rdmsrl(MSR_IA32_UINTR_MISC, *(u64 *)&ctx->state.misc);
+    rdmsrl(MSR_IA32_UINTR_PD, ctx->state.upid_addr);
+    rdmsrl(MSR_IA32_UINTR_RR, ctx->state.uirr);
+
+    // currently unused
+    rdmsrl(MSR_IA32_UINTR_TT, ctx->state.uitt_addr);
+    uintr_dump_upid_state(ctx->upid, "migration");
+    dump_uintr_msrs(NULL);
+  }
 }
 
 /* Function to restore CPU state (to be called on the destination CPU) */
 static void restore_cpu_state_fn(void *info) {
-  struct uintr_process_ctx *proc = (struct uintr_process_ctx *)info;
-  if (!proc)
+  struct uintr_proc_mapping *mapping = (struct uintr_proc_mapping *)info;
+
+  if (!mapping) {
+    pr_warn("UINTR: restore_cpu_state_fn called with bad args!\n");
     return;
+  }
 
-  int cpu = smp_processor_id();
+  if (mapping->ctx) {
+    uintr_process_ctx *ctx = mapping->ctx;
+    wrmsrl(MSR_IA32_UINTR_HANDLER, ctx->state.handler);
+    wrmsrl(MSR_IA32_UINTR_STACKADJUST, ctx->state.stack_adjust);
+    wrmsrl(MSR_IA32_UINTR_MISC, *(u64 *)&ctx->state.misc);
+    wrmsrl(MSR_IA32_UINTR_PD, ctx->state.upid_addr);
+    wrmsrl(MSR_IA32_UINTR_RR, ctx->state.uirr);
 
-  pr_info("UINTR: Restoring CPU state on %d from CPU %d for UPID %d", cpu,
-          proc->phys_core, proc->uitt_idx);
-  proc->phys_core = cpu;
+    // Update UIF
+    if (ctx->uif) {
+      _stui();
+    } else {
+      _clui();
+    }
+  }
 
-  /* Restore the CPU state from the process context */
-  uintr_restore_state(&proc->state);
-
-  print_hex_dump(KERN_INFO, "    ", DUMP_PREFIX_OFFSET, 16, 1, &proc->state,
-                 sizeof(struct uintr_state), true);
-
-  dump_uintr_msrs(NULL);
+  if (mapping->uitt) {
+    wrmsrl(MSR_IA32_UINTR_TT, (u64)mapping->uitt->entries | 1);
+  }
 }
 
 static void tracepoint_find(struct tracepoint *tp, void *priv);
 
-/* Global hash table for PID to proc context mapping */
-static DEFINE_HASHTABLE(proc_ctx_hash, UINTR_PROC_HASH_BITS);
-static DEFINE_SPINLOCK(proc_ctx_lock);
-
-/* Find a process mapping by PID */
-struct uintr_proc_mapping *find_proc_mapping(pid_t pid) {
-  struct uintr_proc_mapping *mapping;
-
-  hash_for_each_possible(proc_ctx_hash, mapping, node, pid) {
-    if (mapping->pid == pid) {
-      return mapping;
-    }
-  }
-
-  return NULL;
+static void uintr_trace_sched_switch(void *data, bool preempt,
+                                     struct task_struct *prev,
+                                     struct task_struct *next) {
+  /*
+   * When a task switch occurs, check if the next task needs UINTR state updated
+   * on the current CPU
+   */
+  // uintr_update_cpu_state(next);
 }
 
 /* Tracepoint handler for sched_migrate_task */
 static void uintr_trace_sched_migrate_task(void *data, struct task_struct *p,
                                            int dest_cpu) {
   struct uintr_proc_mapping *mapping;
-  struct uintr_process_ctx *proc;
-  u32 new_ndst;
-  unsigned long flags;
+  int source_cpu;
   pid_t pid = p->pid;
 
-  /* Look up the process in our hash table */
-  spin_lock_irqsave(&proc_ctx_lock, flags);
   mapping = find_proc_mapping(pid);
-  if (mapping) {
-    proc = mapping->proc;
-  } else {
-    proc = NULL;
+  if (!mapping) {
+    return; // process is not a pid we are tracking, ignore
   }
-  spin_unlock_irqrestore(&proc_ctx_lock, flags);
 
-  if (!proc || !proc->upid)
+  struct migration_info *info = kmalloc(sizeof(*info), GFP_ATOMIC);
+  if (!info) {
+    pr_err("UINTR: Failed to allocate migration info\n");
     return;
+  }
 
-  /* Calculate the new APIC destination ID based on dest_cpu */
-  new_ndst = cpu_to_ndst(dest_cpu);
+  info->dest_cpu = dest_cpu;
+  info->map = mapping;
+
+  source_cpu = task_cpu(p);
 
   /*Must save CPU state here and then reload on the new cpu.*/
+  smp_call_function_single(source_cpu, save_cpu_state_fn, info, 1);
 
-  smp_call_function_single(proc->phys_core, save_cpu_state_fn, proc, 1);
+  pr_info("UINTR: Tracked process %d migrated from CPU %d to CPU %d\n", pid,
+          source_cpu, dest_cpu);
 
-  /* Update the notification destination in the UPID */
-  spin_lock(&proc->ctx_lock);
-  proc->upid->nc.ndst = new_ndst;
-  spin_unlock(&proc->ctx_lock);
+  // restore state on our dest_cpu
+  if (smp_processor_id() == dest_cpu) {
+    // If we're on the destination CPU, call the function directly
+    restore_cpu_state_fn(mapping);
+  } else {
+    // Otherwise, use smp_call_function_single
+    smp_call_function_single(dest_cpu, restore_cpu_state_fn, mapping, 1);
+  }
 
-  pr_info(
-      "UINTR: Handler associated process %d migrated to CPU %d from CPU %d\n",
-      pid, proc->phys_core, dest_cpu);
+  kfree(info);
 
-  /* ALWAYS restore state on destination CPU */
-  smp_call_function_single(dest_cpu, restore_cpu_state_fn, proc, 1);
-
-  pr_info("UINTR: Restored state for PID %d to CPU %d\n", pid, dest_cpu);
-
-  uintr_dump_upid_state(proc->upid, "sched_migrate");
+  pr_info("UINTR: State restored for PID %d to CPU %d\n", pid, dest_cpu);
 }
 
-/* The tracepoint symbol */
-/* TODO: check if valid */
+/* The tracepoint symbols */
 static struct tracepoint *tp_sched_migrate_task;
+static struct tracepoint *tp_sched_switch;
 
 /* Callback for for_each_kernel_tracepoint */
 static void tracepoint_find(struct tracepoint *tp, void *priv) {
   const char *tp_name = priv;
 
-  if (!strcmp(tp->name, tp_name))
-    tp_sched_migrate_task = tp;
+  if (!strcmp(tp->name, tp_name)) {
+    if (!strcmp(tp_name, "sched_migrate_task"))
+      tp_sched_migrate_task = tp;
+    else if (!strcmp(tp_name, "sched_switch"))
+      tp_sched_switch = tp;
+  }
 }
 
 /* Find the sched_migrate_task tracepoint */
 static int find_sched_tracepoints(void) {
-  const char *tp_name = "sched_migrate_task";
-
   /* Reset the global tracepoint pointer */
   tp_sched_migrate_task = NULL;
+  tp_sched_switch = NULL;
 
-  /* Attempt to locate tracepoint */
-  for_each_kernel_tracepoint(tracepoint_find, (void *)tp_name);
-
+  /* Attempt to locate migrate tracepoint */
+  for_each_kernel_tracepoint(tracepoint_find, (void *)"sched_migrate_task");
   if (!tp_sched_migrate_task) {
-    pr_err("UINTR: Failed to find %s tracepoint\n", tp_name);
+    pr_err("UINTR: Failed to find sched_migrate_task tracepoint\n");
     return -EINVAL;
   }
 
-  pr_info("UINTR: Found tracepoint %s\n", tp_name);
+  /* Attempt to locate switch tracepoint */
+  for_each_kernel_tracepoint(tracepoint_find, (void *)"sched_switch");
+  if (!tp_sched_switch) {
+    pr_err("UINTR: Failed to find sched_switch tracepoint\n");
+    return -EINVAL;
+  }
+
+  pr_info("UINTR: Found tracepoints \n");
   return 0;
 }
 
 static int register_sched_tracepoints(void) {
   int ret;
 
-  /* First find the tracepoint */
+  /* First find the tracepoints */
   ret = find_sched_tracepoints();
   if (ret)
     return ret;
 
-  /* Register our probe with the tracepoint */
+  /* Register our probes with the tracepoints */
   ret = tracepoint_probe_register(tp_sched_migrate_task,
                                   uintr_trace_sched_migrate_task, NULL);
   if (ret) {
     pr_err("UINTR: Failed to register sched_migrate_task tracepoint\n");
+    return ret;
+  }
+
+  ret = tracepoint_probe_register(tp_sched_switch, uintr_trace_sched_switch,
+                                  NULL);
+  if (ret) {
+    tracepoint_probe_unregister(tp_sched_migrate_task,
+                                uintr_trace_sched_migrate_task, NULL);
+    pr_err("UINTR: Failed to register sched_switch tracepoint\n");
     return ret;
   }
 
@@ -174,6 +217,12 @@ static void unregister_sched_tracepoints(void) {
     tracepoint_probe_unregister(tp_sched_migrate_task,
                                 uintr_trace_sched_migrate_task, NULL);
     tp_sched_migrate_task = NULL;
+  }
+
+  if (tp_sched_switch) {
+    tracepoint_probe_unregister(tp_sched_switch, uintr_trace_sched_switch,
+                                NULL);
+    tp_sched_switch = NULL;
   }
 }
 
@@ -190,89 +239,10 @@ int uintr_sched_trace_init(void) {
 }
 
 void uintr_sched_trace_cleanup(void) {
-  struct uintr_proc_mapping *mapping;
-  struct hlist_node *tmp;
-  unsigned int bkt;
-
   /* Unregister tracepoints */
   unregister_sched_tracepoints();
 
-  /* Clean up the hash table */
-  spin_lock(&proc_ctx_lock);
-  hash_for_each_safe(proc_ctx_hash, bkt, tmp, mapping, node) {
-    hash_del(&mapping->node);
-    kfree(mapping);
-  }
-  spin_unlock(&proc_ctx_lock);
+  proc_mapping_cleanup();
 
   pr_info("UINTR: Scheduler tracing cleaned up\n");
-}
-
-int uintr_sched_trace_register_proc(struct uintr_process_ctx *proc) {
-  struct uintr_proc_mapping *mapping;
-  unsigned long flags;
-
-  if (!proc || !proc->task)
-    return -EINVAL;
-
-  /* Check if this process is already registered */
-  spin_lock_irqsave(&proc_ctx_lock, flags);
-  mapping = find_proc_mapping(proc->task->pid);
-
-  if (mapping) {
-    /* Update existing mapping */
-    mapping->proc = proc;
-    spin_unlock_irqrestore(&proc_ctx_lock, flags);
-    return 0;
-  }
-
-  /* Create a new mapping */
-  mapping = kzalloc(sizeof(*mapping), GFP_ATOMIC);
-  if (!mapping) {
-    spin_unlock_irqrestore(&proc_ctx_lock, flags);
-    return -ENOMEM;
-  }
-
-  mapping->pid = proc->task->pid;
-  mapping->proc = proc;
-
-  /* Add to hash table */
-  hash_add(proc_ctx_hash, &mapping->node, mapping->pid);
-  spin_unlock_irqrestore(&proc_ctx_lock, flags);
-
-  /* Initialize NDST to current CPU's APIC ID */
-  if (proc->upid) {
-    u32 current_ndst = cpu_to_ndst(task_cpu(proc->task));
-    if (current_ndst != BAD_APICID) {
-      spin_lock(&proc->ctx_lock);
-      proc->upid->nc.ndst = current_ndst;
-      spin_unlock(&proc->ctx_lock);
-    }
-  }
-
-  pr_info("UINTR: Registered PID %d for scheduler tracing on CPU %d\n",
-          proc->task->pid, task_cpu(proc->task));
-  return 0;
-}
-
-void uintr_sched_trace_unregister_proc(struct uintr_process_ctx *proc) {
-  struct uintr_proc_mapping *mapping;
-  unsigned long flags;
-
-  if (!proc || !proc->task)
-    return;
-
-  /* Find and remove the mapping */
-  spin_lock_irqsave(&proc_ctx_lock, flags);
-  mapping = find_proc_mapping(proc->task->pid);
-  if (mapping) {
-    hash_del(&mapping->node);
-    kfree(mapping);
-  }
-  spin_unlock_irqrestore(&proc_ctx_lock, flags);
-
-  if (mapping) {
-    pr_info("UINTR: Unregistered PID %d from scheduler tracing\n",
-            proc->task->pid);
-  }
 }

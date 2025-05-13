@@ -1,6 +1,7 @@
 #include "proc.h"
 #include "inteldef.h"
 #include "logging/monitor.h"
+#include "mappings/proc_mapping.h"
 #include "state.h"
 #include "trace/sched.h"
 #include "uitt.h"
@@ -10,9 +11,9 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 
-struct uintr_process_ctx *uintr_proc_create(struct task_struct *task,
-                                            struct uintr_device *dev) {
-  struct uintr_process_ctx *ctx;
+// TODO: this function should have better erroring. (?)
+uintr_process_ctx *uintr_create_ctx(struct task_struct *task) {
+  uintr_process_ctx *ctx;
   int ret;
 
   if (!task) {
@@ -25,30 +26,29 @@ struct uintr_process_ctx *uintr_proc_create(struct task_struct *task,
     pr_err("UINTR: Failed to allocate memory for process context!");
     return NULL;
   }
-  ctx->task = task;
 
-  ret = uintr_init_state(ctx, dev);
+  spin_lock_init(&ctx->ctx_lock);
+  ctx->task = task;
+  ctx->uif = false;
+  ctx->handler_active = false;
+  ctx->handler = NULL;
+
+  ret = uintr_create_upid(ctx);
   if (ret < 0) {
     kfree(ctx);
     return NULL;
   }
 
-  ret = uintr_sched_trace_register_proc(ctx);
-  if (ret < 0) {
-    pr_warn("UINTR: Failed to register for scheduler tracing: %d\n", ret);
-    // TODO: maybe error out instead.
-  }
-
-  uintr_dump_upid_state(ctx->upid, "proc_create");
+  memset(&ctx->state, 0, sizeof(struct uintr_state));
 
   return ctx;
 }
 
-void uintr_proc_destroy(struct uintr_process_ctx *ctx) {
+void uintr_destroy_ctx(uintr_process_ctx *ctx) {
   if (!ctx)
     return;
 
-  uintr_sched_trace_unregister_proc(ctx);
+  remove_all_mappings_for_ctx(ctx);
 
   // Clear CPU state
   preempt_disable();

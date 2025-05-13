@@ -12,7 +12,7 @@ void uintr_save_state(struct uintr_state *state);
 void uintr_restore_state(struct uintr_state *state);
 void uintr_clear_state(void *info);
 
-int uintr_init_state(struct uintr_process_ctx *ctx, struct uintr_device *dev);
+int uintr_create_upid(uintr_process_ctx *ctx);
 
 inline u32 cpu_to_ndst(int cpu);
 
