@@ -1,7 +1,7 @@
 #ifndef _UAPI_ASM_X86_UINTR_H
 #define _UAPI_ASM_X86_UINTR_H
 
-#include "../../../src/common.h"
+#include "../src/common.h"
 
 #include <fcntl.h>
 #include <linux/types.h>
