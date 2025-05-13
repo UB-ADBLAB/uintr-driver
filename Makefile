@@ -17,7 +17,13 @@ load: all
 	sudo chmod 666 /dev/uintr
 
 test:
-	gcc -g -mgeneral-regs-only -muintr -pthread tests/new_pinned.c -o pinned
+	gcc -g -mgeneral-regs-only -muintr -pthread ./tests/new_pinned.c -o pinned
 
 test_migration:
-	gcc -g -mgeneral-regs-only -muintr -pthread tests/new_migration.c -o migration
+	gcc -g -mgeneral-regs-only -muintr -pthread ./tests/new_migration.c -o migration
+
+test_two_sender:
+	gcc -g -mgeneral-regs-only -muintr -pthread ./tests/two_sender_unpinned.c -o two_sender_unpinned
+
+test_one_sender:
+	gcc -g -mgeneral-regs-only -muintr -pthread ./tests/one_sender_unpinned.c -o one_sender_unpinned

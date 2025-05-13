@@ -1,5 +1,5 @@
 #define _GNU_SOURCE
-#include "../src/common.h"
+#include "../include/uapi/linux/uintr.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -13,8 +13,6 @@
 #include <unistd.h>
 #include <x86intrin.h>
 
-static int uintr_fd = -1;
-
 /* volatile because value will change when interrupted */
 static volatile int interrupt_received = 0;
 static volatile sig_atomic_t keep_running = 1;
@@ -22,10 +20,22 @@ static volatile sig_atomic_t keep_running = 1;
 #define HANDLER_STACK_SIZE (64 * 1024)
 static void *handler_stack = NULL;
 
+static void cleanup(void) {
+  printf("\nCleaning up...\n");
+
+  /* Disable interrupts before cleanup */
+  _clui();
+
+  if (handler_stack) {
+    free(handler_stack);
+    handler_stack = NULL;
+  }
+}
+
 /* Handler for user interrupts */
 void __attribute__((target("uintr"), interrupt))
 test_handler(struct __uintr_frame *ui_frame, unsigned long long vector) {
-  interrupt_received = 1;
+  interrupt_received++;
 }
 
 static void sigint_handler(int signum) {
@@ -34,23 +44,30 @@ static void sigint_handler(int signum) {
 }
 
 void *sender_thread(void *arg) {
-  int uipi_index = *(int *)arg;
+  uintr_receiver_id_t receiver_id = *(uintr_receiver_id_t *)arg;
+  int idx = -1;
 
   int cpu = sched_getcpu();
-  printf("Sender thread initialized on core: %d \n", cpu);
+  printf("Sender thread initialized on core: %d, pid: %d\n", cpu, getpid());
+
+  sleep(3);
+
+  idx = uintr_register_sender(receiver_id, 0, 0);
 
   sleep(3);
 
   printf("Sending user interrupt...\n");
-  _senduipi(uipi_index);
+  _senduipi(idx);
   printf("User interrupt sent...\n");
+
+  uintr_unregister_sender(idx);
 
   return NULL;
 }
 
 int main(void) {
   int ret;
-  pthread_t sender_tid;
+  pthread_t sender1, sender2;
   int cpu;
   struct sigaction act;
 
@@ -67,63 +84,40 @@ int main(void) {
   printf("Allocated handler stack at %p with size %d bytes\n", handler_stack,
          HANDLER_STACK_SIZE);
 
-  // Open the device
-  uintr_fd = open("/dev/uintr", O_RDWR);
-  if (uintr_fd < 0) {
-    perror("Failed to open /dev/uintr");
-    return EXIT_FAILURE;
-  }
-
-  // Register interrupt handler
-  struct _uintr_handler_args handler_args = {.handler = test_handler,
-                                             .stack = handler_stack,
-                                             .stack_size = HANDLER_STACK_SIZE,
-                                             .flags = 0};
-
-  printf("Registering handler 1...\n");
-  int idx_1 = ioctl(uintr_fd, UINTR_REGISTER_HANDLER, &handler_args);
-  if (idx_1 < 0) {
-    perror("Failed to register handler 1");
-    goto cleanup;
-  }
-  printf("Got assigned index %d from registering handler 1.\n", idx_1);
-
-  sleep(1);
-
-  printf("Registering handler 2...\n");
-  int uipi_index = ioctl(uintr_fd, UINTR_REGISTER_HANDLER, &handler_args);
-  if (uipi_index < 0) {
-    perror("Failed to register handler 1");
-    goto cleanup;
-  }
-  printf("Got assigned index %d from registering handler 2.\n", uipi_index);
-
-  ioctl(uintr_fd, UINTR_DUMP_ENTRY, idx_1);
-  ioctl(uintr_fd, UINTR_DUMP_ENTRY, uipi_index);
+  uintr_receiver_id_t receiver_id = 0;
+  receiver_id = uintr_register_handler(test_handler, handler_stack,
+                                       HANDLER_STACK_SIZE, 0);
 
   // Enable user interrupts
   printf("Current UIF before stui: %u\n", _testui());
   _stui();
   if (!_testui()) {
     printf("[ERROR] UIF not set after _stui()!\n");
-    goto cleanup;
+    cleanup();
+    return EXIT_FAILURE;
   }
   printf("UIF set successfully. UIF after stui: %u\n", _testui());
 
-  // Start a sender thread with idx 2
-  ret = pthread_create(&sender_tid, NULL, sender_thread, &uipi_index);
+  ret = pthread_create(&sender1, NULL, sender_thread, &receiver_id);
   if (ret != 0) {
-    perror("Failed to create sender thread");
+    perror("Failed to create sender thread 1\n");
+    goto cleanup;
+  }
+  ret = pthread_create(&sender2, NULL, sender_thread, &receiver_id);
+  if (ret != 0) {
+    perror("Failed to create sender thread 2\n");
     goto cleanup;
   }
 
+  sleep(2);
   cpu = sched_getcpu();
   printf("Main thread running on core: %d\n", cpu);
+  sleep(3);
+  cpu = sched_getcpu();
+  printf("Main thread migrated to core: %d\n", cpu);
   printf("Waiting for interrupt...\n");
 
-  ioctl(uintr_fd, UINTR_DUMP_MSR, cpu);
-
-  while (!interrupt_received && keep_running) {
+  while (interrupt_received != 2 && keep_running) {
   }
 
   if (!keep_running) {
@@ -132,16 +126,17 @@ int main(void) {
   }
 
   printf("User interrupt received!\n");
-  pthread_join(sender_tid, NULL);
+  pthread_join(sender1, NULL);
+  pthread_join(sender2, NULL);
   printf("Test completed successfully!\n");
   ret = EXIT_SUCCESS;
 
 cleanup:
   _clui();
 
-  if (uintr_fd >= 0) {
-    ioctl(uintr_fd, UINTR_UNREGISTER_HANDLER, uipi_index);
-    close(uintr_fd);
+  if (receiver_id) {
+    uintr_unregister_handler(receiver_id);
   }
+
   return ret;
 }
