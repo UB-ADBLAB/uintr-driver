@@ -168,8 +168,6 @@ void remove_all_mappings_for_uitt(struct uintr_uitt *uitt) {
       if (mapping->ctx) {
         /* Process is also a handler, just remove UITT */
         mapping->uitt = NULL;
-        kfree(uitt->entries);
-        kfree(uitt);
       } else {
         /* Process is only a sender, remove the entire mapping */
         hash_del(&mapping->node);

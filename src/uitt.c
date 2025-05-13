@@ -12,17 +12,64 @@
 
 extern u32 uintr_max_uitt_entries;
 
-// TODO: this is a bad way to do this, but the easiest to implement for now.
 int unregister_sender(int idx) {
-  u64 uitt_addr;
-  rdmsrl(MSR_IA32_UINTR_TT, uitt_addr);
-  struct uintr_uitt *uitt = (struct uintr_uitt *)uitt_addr;
-  if (!uitt) {
-    return -1;
-    pr_warn("UINTR: UITT msr value missing.\n");
+  pr_debug("UINTR: Freeing ipi_idx %d for PID: %d\n", idx, current->pid);
+
+  struct uintr_proc_mapping *map = find_proc_mapping(current->pid);
+  if (!map) {
+    pr_warn("UINTR: No mapping found for PID %d\n", current->pid);
+    return -EINVAL;
   }
-  uitt->entries[idx].valid = 0;
+
+  if (!map->uitt) {
+    pr_warn("UINTR: No UITT found for PID %d\n", current->pid);
+    return -EINVAL;
+  }
+
+  // Validate index
+  if (idx < 0 || idx >= map->uitt->size) {
+    pr_warn("UINTR: Invalid index %d (size: %u)\n", idx, map->uitt->size);
+    return -EINVAL;
+  }
+
+  pr_debug(
+      "UINTR: Entry[%d] before: valid=%u, vector=0x%x, target_upid=0x%llx\n",
+      idx, map->uitt->entries[idx].valid, map->uitt->entries[idx].user_vec,
+      map->uitt->entries[idx].target_upid_addr);
+
+  // Mark the entry as invalid
+  map->uitt->entries[idx].valid = 0;
+
+  // Verify that we've actually cleared it
+  pr_debug("UINTR: Entry[%d] after: valid=%u\n", idx,
+           map->uitt->entries[idx].valid);
+
+  // Ensure memory operations
+  smp_wmb();
+
+  // Check if this was the last entry
+  if (is_uitt_empty(map->uitt)) {
+    pr_debug("UINTR: All entries freed, cleaning up UITT for PID: %d\n",
+             current->pid);
+
+    // Free the entries and UITT
+    uitt_cleanup(map->uitt);
+
+    // Update mapping
+    map->uitt = NULL;
+  }
+
   return 0;
+}
+
+bool is_uitt_empty(struct uintr_uitt *uitt) {
+  u64 layout = 0;
+  for (unsigned int i = 0; i < uitt->size; i++) {
+    if (uitt->entries[i].valid == 1) {
+      return false;
+    }
+  }
+  return true;
 }
 
 int register_sender(uintr_receiver_id_t receiver_id, int vector) {
@@ -98,7 +145,6 @@ int uitt_find_empty_idx(struct uintr_uitt *uitt) {
   return -1;
 }
 
-// could also accept PID?
 struct uintr_uitt *uitt_init(struct task_struct *task) {
   size_t uitt_size;
   struct uintr_uitt_entry *uitt_base;
@@ -128,8 +174,8 @@ struct uintr_uitt *uitt_init(struct task_struct *task) {
   uitt->entries = uitt_base;
   uitt->size = uintr_max_uitt_entries;
 
-  pr_info("UINTR: UITT created for PID: %d at 0x%px\n", task->pid, uitt);
-  pr_info("UINTR: UITT aligned to %lu bytes\n", PAGE_SIZE);
+  pr_debug("UINTR: UITT created for PID: %d at 0x%px\n", task->pid, uitt);
+  pr_debug("UINTR: UITT aligned to %lu bytes\n", PAGE_SIZE);
 
   add_proc_sender_mapping(task->pid, uitt);
   if (ret < 0) {

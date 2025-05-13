@@ -40,7 +40,7 @@ int uintr_unregister_handler(uintr_receiver_id_t receiver_id) {
     return EXIT_FAILURE;
   }
 
-  // ioctl(uintr_fd, UINTR_UNREGISTER_HANDLER, receiver_id);
+  ioctl(uintr_fd, UINTR_UNREGISTER_HANDLER, receiver_id);
 
   close(uintr_fd);
   return 0;

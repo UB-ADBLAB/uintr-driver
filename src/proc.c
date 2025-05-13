@@ -48,8 +48,6 @@ void uintr_destroy_ctx(uintr_process_ctx *ctx) {
   if (!ctx)
     return;
 
-  remove_all_mappings_for_ctx(ctx);
-
   // Clear CPU state
   preempt_disable();
 
@@ -73,6 +71,8 @@ void uintr_destroy_ctx(uintr_process_ctx *ctx) {
   }
 
   spin_unlock(&ctx->ctx_lock);
+
+  // must also destroy all associated uitts
 
   kfree(ctx);
 }

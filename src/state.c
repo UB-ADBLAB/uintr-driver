@@ -97,8 +97,8 @@ int uintr_create_upid(uintr_process_ctx *ctx) {
   ctx->upid->nc.ndst = cpu_to_ndst(cpu);
   ctx->upid->nc.nv = IRQ_VEC_USER;
 
-  pr_info("UINTR: Initalized UPID for process %d on CPU %d (APIC ID: %u)\n",
-          task->pid, task_cpu(task), ctx->upid->nc.ndst);
+  pr_debug("UINTR: Initialized UPID for process %d on CPU %d (APIC ID: %u)\n",
+           task->pid, task_cpu(task), ctx->upid->nc.ndst);
 
   return 0;
 }

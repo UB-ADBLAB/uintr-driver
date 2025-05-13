@@ -35,4 +35,6 @@ void uitt_cleanup(struct uintr_uitt *uitt);
 void uintr_dump_uitt_entry_state(const struct uintr_uitt_entry *entry, int idx,
                                  const char *caller);
 
+bool is_uitt_empty(struct uintr_uitt *uitt);
+
 #endif

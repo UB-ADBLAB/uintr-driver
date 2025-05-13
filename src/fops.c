@@ -56,7 +56,8 @@ long uintr_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
   }
   case UINTR_UNREGISTER_SENDER: {
     int idx = (int)arg;
-    // ret = unregister_sender(idx);
+    ret = unregister_sender(idx);
+    pr_info("UINTR: received unregister_sender ioctl\n");
     break;
   }
   case UINTR_DEBUG: {
@@ -82,14 +83,14 @@ int uintr_open(struct inode *inode, struct file *file) {
   spin_lock_init(&ufile->file_lock);
   file->private_data = ufile;
 
-  pr_info("UINTR: Opened device file, created ufile %p\n", ufile);
+  pr_debug("UINTR: Opened device file, created ufile %p\n", ufile);
   return 0;
 }
 
 int uintr_release(struct inode *inode, struct file *file) {
   struct uintr_file *ufile = file->private_data;
 
-  pr_info("UINTR: Releasing device file, ufile %p\n", ufile);
+  pr_debug("UINTR: Releasing device file, ufile %p\n", ufile);
 
   if (ufile) {
     kfree(ufile);

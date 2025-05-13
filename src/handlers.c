@@ -34,14 +34,14 @@ uintr_receiver_id_t register_handler(_uintr_handler_args *handler_args) {
     // because stacks grow downward in x86_64
     stack_addr = (u64)handler_args->stack + handler_args->stack_size;
 
-    pr_info("UINTR: Stack setup - start: 0x%llx, size: %llu, adjusted top: "
-            "0x%llx\n",
-            (u64)handler_args->stack, (u64)handler_args->stack_size,
-            stack_addr);
+    pr_debug("UINTR: Stack setup - start: 0x%llx, size: %llu, adjusted top: "
+             "0x%llx\n",
+             (u64)handler_args->stack, (u64)handler_args->stack_size,
+             stack_addr);
   } else {
     stack_addr = OS_ABI_REDZONE;
-    pr_info("UINTR: Using default stack adjustment (red zone): %d\n",
-            OS_ABI_REDZONE);
+    pr_debug("UINTR: Using default stack adjustment (red zone): %d\n",
+             OS_ABI_REDZONE);
   }
 
   // Create process context
@@ -89,8 +89,8 @@ uintr_receiver_id_t register_handler(_uintr_handler_args *handler_args) {
   wrmsrl(MSR_IA32_UINTR_MISC, misc_val);
 
   dump_uintr_msrs(NULL);
-  pr_info("UINTR: Registered handler on CPU %d, handler address %lld", cpu,
-          (u64)handler_args->handler);
+  pr_debug("UINTR: Registered handler on CPU %d, handler address %lld", cpu,
+           (u64)handler_args->handler);
 
   // register handler scheduler
   ret = add_proc_handler_mapping(ctx->task->pid, ctx);
@@ -121,9 +121,15 @@ int unregister_handler(uintr_receiver_id_t id) {
 
   ctx = find_process_ctx_by_id(id);
 
-  // TODO: must also remove all uitt that was associated
   if (ctx) {
+    // prevent look up of this ctx by id
+    remove_all_recid_mappings_for_ctx(ctx);
+
+    pr_info("UINTR: Freeing CTX & UPID for PID: %d\n", ctx->task->pid);
+    // remove mappings for scheduler tracking of this process
+    remove_all_mappings_for_ctx(ctx);
     uintr_destroy_ctx(ctx);
+    ctx = NULL;
   }
 
   return 0;
