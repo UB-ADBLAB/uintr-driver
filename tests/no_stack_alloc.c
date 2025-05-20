@@ -1,5 +1,4 @@
 #define _GNU_SOURCE
-#include "../include/uintr_driver.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -10,6 +9,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <uintrdriv.h>
 #include <unistd.h>
 #include <x86intrin.h>
 
@@ -17,19 +17,11 @@
 static volatile int interrupt_received = 0;
 static volatile sig_atomic_t keep_running = 1;
 
-#define HANDLER_STACK_SIZE (64 * 1024)
-static void *handler_stack = NULL;
-
 static void cleanup(void) {
   printf("\nCleaning up...\n");
 
   /* Disable interrupts before cleanup */
   _clui();
-
-  if (handler_stack) {
-    free(handler_stack);
-    handler_stack = NULL;
-  }
 }
 
 /* Handler for user interrupts */
@@ -76,18 +68,8 @@ int main(void) {
   act.sa_handler = sigint_handler;
   sigaction(SIGINT, &act, NULL);
 
-  // allocate a dedicated stack for the uintr handler
-  handler_stack = aligned_alloc(4096, HANDLER_STACK_SIZE);
-  if (!handler_stack) {
-    perror("Failed to allocate handler stack");
-    return EXIT_FAILURE;
-  }
-  printf("Allocated handler stack at %p with size %d bytes\n", handler_stack,
-         HANDLER_STACK_SIZE);
-
   uintr_receiver_id_t receiver_id = 0;
-  receiver_id = uintr_register_handler(test_handler, handler_stack,
-                                       HANDLER_STACK_SIZE, 0);
+  receiver_id = uintr_register_handler(test_handler, NULL, 0, 0);
 
   // Enable user interrupts
   printf("Current UIF before stui: %u\n", _testui());

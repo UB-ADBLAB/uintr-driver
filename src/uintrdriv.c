@@ -1,7 +1,4 @@
-#ifndef _UAPI_ASM_X86_UINTR_H
-#define _UAPI_ASM_X86_UINTR_H
-
-#include "../src/common.h"
+#include "../include/uintrdriv.h"
 
 #include <fcntl.h>
 #include <linux/types.h>
@@ -95,5 +92,3 @@ int uintr_debug(void) {
   close(uintr_fd);
   return 0;
 }
-
-#endif

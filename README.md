@@ -1,6 +1,8 @@
 # Intel User Interrupts (UINTR) Linux Driver
 
-A Linux kernel module that provides support for Intel's User Interrupts (UINTR) feature.
+A Linux kernel module that provides support for Intel's User Interrupts (UINTR)
+feature, allow user-space applications to send and receive interrupts directly
+without kernel intervention.
 
 ## Prerequisites
 
@@ -12,7 +14,7 @@ A Linux kernel module that provides support for Intel's User Interrupts (UINTR) 
 ### Using Make directly
 
 ```bash
-# Set the kernel directory if not using the running kernel
+# Set the kernel directory if not compiling for the running kernel
 export KERNELDIR=/path/to/kernel/headers
 
 # Build the module
@@ -24,7 +26,8 @@ make clean
 
 ### Using Nix Development Environment
 
-This project includes a Nix flake for setting up a consistent development environment:
+This project includes a Nix flake for setting up a consistent development
+environment:
 
 ```bash
 # Enter the development shell
@@ -37,12 +40,15 @@ make
 ## Installation
 
 ```bash
-# Load the module
-sudo insmod intel-uintr.ko
+# Build module & user-space library
+make
 
-# Verify the module is loaded
-lsmod | grep intel-uintr
+# Install user-space library
+sudo make install
 
-# View kernel logs for driver status
-dmesg | grep UINTR
+# Update dynamic linker cache
+sudo ldconfig
+
+# Load the kernel module
+sudo make load
 ```
