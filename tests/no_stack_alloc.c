@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include "../include/uintrdriv.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -9,7 +10,6 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
-#include <uintrdriv.h>
 #include <unistd.h>
 #include <x86intrin.h>
 
