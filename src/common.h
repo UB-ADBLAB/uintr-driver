@@ -9,7 +9,7 @@
 #include <stdint.h>
 #endif
 
-#define UINTR_HANDLER_FLAG_STACK 0x1;
+#define UINTR_HANDLER_FLAG_STACK 0x1
 
 #define OS_ABI_REDZONE 128
 

@@ -1,5 +1,5 @@
 #define _GNU_SOURCE
-#include "../include/uapi/linux/uintr.h"
+#include "../include/uintrdriv.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>

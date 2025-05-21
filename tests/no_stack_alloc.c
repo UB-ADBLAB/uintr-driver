@@ -27,7 +27,7 @@ static void cleanup(void) {
 /* Handler for user interrupts */
 void __attribute__((target("uintr"), interrupt))
 test_handler(struct __uintr_frame *ui_frame, unsigned long long vector) {
-  interrupt_received = 1;
+  interrupt_received++;
 }
 
 static void sigint_handler(int signum) {
@@ -35,36 +35,17 @@ static void sigint_handler(int signum) {
   keep_running = 0;
 }
 
-/* Helper function to set thread affinity */
-static int set_thread_affinity(pthread_t thread, int core) {
-  cpu_set_t cpuset;
-  CPU_ZERO(&cpuset);
-  CPU_SET(core, &cpuset);
-
-  int ret = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
-  if (ret != 0) {
-    printf("Failed to set thread affinity to core %d: %s\n", core,
-           strerror(ret));
-    return -1;
-  }
-  return 0;
-}
-
 void *sender_thread(void *arg) {
   uintr_receiver_id_t receiver_id = *(uintr_receiver_id_t *)arg;
   int idx = -1;
 
-  // Set sender thread affinity to core 2
-  if (set_thread_affinity(pthread_self(), 2) != 0) {
-    return NULL;
-  }
-
   int cpu = sched_getcpu();
-  printf("Sender thread initialized on core: %d \n", cpu);
+  printf("Sender thread initialized on core: %d, pid: %d\n", cpu, getpid());
 
   sleep(3);
 
   idx = uintr_register_sender(receiver_id, 0, 0);
+  printf("Got idx: %d\n", idx);
 
   sleep(3);
 
@@ -72,12 +53,14 @@ void *sender_thread(void *arg) {
   _senduipi(idx);
   printf("User interrupt sent...\n");
 
+  uintr_unregister_sender(idx);
+
   return NULL;
 }
 
 int main(void) {
   int ret;
-  pthread_t sender_tid;
+  pthread_t sender1;
   int cpu;
   struct sigaction act;
 
@@ -85,12 +68,6 @@ int main(void) {
   act.sa_handler = sigint_handler;
   sigaction(SIGINT, &act, NULL);
 
-  // Set main thread affinity to core 0
-  if (set_thread_affinity(pthread_self(), 0) != 0) {
-    return EXIT_FAILURE;
-  }
-
-  // allocate a dedicated stack for the uintr handler
   uintr_receiver_id_t receiver_id = 0;
   receiver_id = uintr_register_handler(test_handler, NULL, 0, 0);
 
@@ -104,14 +81,18 @@ int main(void) {
   }
   printf("UIF set successfully. UIF after stui: %u\n", _testui());
 
-  ret = pthread_create(&sender_tid, NULL, sender_thread, &receiver_id);
+  ret = pthread_create(&sender1, NULL, sender_thread, &receiver_id);
   if (ret != 0) {
-    perror("Failed to create sender thread");
-    goto cleanup;
+    perror("Failed to create sender thread 1\n");
+    cleanup();
   }
 
+  sleep(2);
   cpu = sched_getcpu();
   printf("Main thread running on core: %d\n", cpu);
+  sleep(3);
+  cpu = sched_getcpu();
+  printf("Main thread migrated to core: %d\n", cpu);
   printf("Waiting for interrupt...\n");
 
   while (!interrupt_received && keep_running) {
@@ -123,12 +104,14 @@ int main(void) {
   }
 
   printf("User interrupt received!\n");
-  pthread_join(sender_tid, NULL);
+  pthread_join(sender1, NULL);
   printf("Test completed successfully!\n");
   ret = EXIT_SUCCESS;
 
-cleanup:
+  // clean up
   _clui();
+
+  uintr_unregister_handler(receiver_id);
 
   return ret;
 }
