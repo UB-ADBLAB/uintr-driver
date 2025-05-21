@@ -26,12 +26,9 @@ typedef struct {
 } _uintr_sender_args;
 
 struct _uintr_frame {
-  unsigned long rip;
-  unsigned long rflags;
-  unsigned long rsp;
-  unsigned long cs;
-  unsigned long ss;
-  unsigned long vector;
+  unsigned long long rip;
+  unsigned long long rflags;
+  unsigned long long rsp;
 };
 
 #define UINTR_REGISTER_HANDLER _IOW('u', 0, _uintr_handler_args)
@@ -75,7 +72,7 @@ int uintr_unregister_handler(uintr_receiver_id_t receiver_id);
  * @brief Registers a sender on the current process for a specified receiver.
  *Multiple senders may be registered per process.
  *
- * @param receiver_id The receiver ID of the handler to send.
+ * @param receiver_id The receiver ID of the handler to send interrupts to.
  *
  * @param vector The vector that is pushed onto the stack when in the interrupt
  * handler triggered by the interrupt.
@@ -94,11 +91,49 @@ int uintr_register_sender(uintr_receiver_id_t receiver_id, unsigned int vector,
  * @param idx The index previously returned by uintr_register_sender that
  * identifies which sender to remove.
  *
- * @note All senders should be urnegistered before the process exits to avoid
+ * @note All senders should be unregistered before the process exits to avoid
  * resource leaks
  **/
 int uintr_unregister_sender(int idx);
 
 int uintr_debug(void);
+
+/* --- Intrinsics ---
+ *
+ * the following intrinsics map directly to the instructions specified in the
+ * Intel SDM Vol. 2B 4-616.
+ */
+
+#ifndef __ASSEMBLY__
+
+/* Set User Interrupt Flag - enables user interrupts */
+static __always_inline void __stui(void) {
+  __asm__ __volatile__("stui" : : : "memory");
+}
+
+/* Clear User Interrupt Flag - disables user interrupts */
+static __always_inline void __clui(void) {
+  __asm__ __volatile__("clui" : : : "memory");
+}
+
+/* Determine User Interrupt Flag - returns current UIF value */
+static __always_inline unsigned char __testui(void) {
+  unsigned char cf;
+  __asm__ __volatile__("testui" : "=@ccb"(cf) : : "cc");
+  return cf;
+}
+
+/* Send User Interrupt - sends a user interrupt to the index set in the register
+ */
+static __always_inline void __senduipi(unsigned long uipi_index) {
+  __asm__ __volatile__("senduipi %0" : : "r"(uipi_index) : "memory");
+}
+
+/* Return from user interrupt handler */
+static __always_inline void __uiret(void) {
+  __asm__ __volatile__("uiret" : : : "memory");
+}
+
+#endif
 
 #endif
