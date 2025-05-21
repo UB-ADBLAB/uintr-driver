@@ -11,7 +11,7 @@
 #include "uitt.h"
 
 // Driver Version
-#define UINTR_DRIVER_VERSION "0.1.2"
+#define UINTR_DRIVER_VERSION "0.1.3"
 
 // Main device driver structure
 struct uintr_device {
