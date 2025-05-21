@@ -126,7 +126,7 @@ int unregister_handler(uintr_receiver_id_t id) {
     // prevent look up of this ctx by id
     remove_all_recid_mappings_for_ctx(ctx);
 
-    pr_info("UINTR: Freeing CTX & UPID for PID: %d\n", ctx->task->pid);
+    pr_debug("UINTR: Freeing CTX & UPID for PID: %d\n", ctx->task->pid);
     // remove mappings for scheduler tracking of this process
     remove_all_mappings_for_ctx(ctx);
     uintr_destroy_ctx(ctx);
