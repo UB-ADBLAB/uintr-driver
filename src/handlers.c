@@ -19,29 +19,31 @@ uintr_receiver_id_t register_handler(_uintr_handler_args *handler_args) {
   u64 stack_addr, misc_val;
   int cpu, ret;
 
-  // verify handler args
+  // Verify handler pointer (required)
   if (!handler_args->handler)
     return -EINVAL;
 
-  // Set up stack address
+  // Set up stack address (optional)
   if (handler_args->stack) {
     if (!handler_args->stack_size || handler_args->stack_size < PAGE_SIZE) {
       return -EINVAL;
     }
 
-    // handler_args.stack points to the START of allocated buffer (low address)
-    // We need to set the stack to the END of the buffer (high address)
-    // because stacks grow downward in x86_64
-    stack_addr = (u64)handler_args->stack + handler_args->stack_size;
+    // handler_args.stack points to the START of allocated buffer (low
+    // address) We need to set the stack to the END of the buffer (high
+    // address) because stacks grow downward in x86_64
+    // Additionally, we must set the lowest bit to 1 to tell the hardware that
+    // this the address of the stack to use
+    stack_addr = ((u64)handler_args->stack + handler_args->stack_size) | 1;
 
     pr_debug("UINTR: Stack setup - start: 0x%llx, size: %llu, adjusted top: "
              "0x%llx\n",
              (u64)handler_args->stack, (u64)handler_args->stack_size,
              stack_addr);
   } else {
-    stack_addr = OS_ABI_REDZONE;
-    pr_debug("UINTR: Using default stack adjustment (red zone): %d\n",
-             OS_ABI_REDZONE);
+    stack_addr = OS_ABI_REDZONE * 2;
+    pr_debug("UINTR: Using default stack adjustment (OS_ABI_REDZONE * 2): %d\n",
+             OS_ABI_REDZONE * 2);
   }
 
   // Create process context
@@ -68,8 +70,7 @@ uintr_receiver_id_t register_handler(_uintr_handler_args *handler_args) {
   // Configure MSRs -------
   cpu = smp_processor_id();
   wrmsrl(MSR_IA32_UINTR_HANDLER, (u64)handler_args->handler);
-  wrmsrl(MSR_IA32_UINTR_STACKADJUST, stack_addr | 0x1);
-  // lowest bit indicates this reg is set ---------^
+  wrmsrl(MSR_IA32_UINTR_STACKADJUST, stack_addr);
 
   wrmsrl(MSR_IA32_UINTR_PD, (u64)ctx->upid);
 
