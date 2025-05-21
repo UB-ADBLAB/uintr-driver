@@ -63,7 +63,6 @@ int unregister_sender(int idx) {
 }
 
 bool is_uitt_empty(struct uintr_uitt *uitt) {
-  u64 layout = 0;
   for (unsigned int i = 0; i < uitt->size; i++) {
     if (uitt->entries[i].valid == 1) {
       return false;
