@@ -39,8 +39,7 @@ struct uintr_upid {
   u64 puir;
 } __aligned(64);
 
-// TODO: xstate isn't possible with a driver model. Modifying this state to be
-// more specific to our implementation is needed.
+// MSR state that gets saved/restored on context switch
 struct uintr_state {
   u64 handler;
   u64 stack_adjust;
@@ -62,13 +61,29 @@ struct uintr_state {
   u64 uitt_addr;
 } __packed;
 
+// Role types
+typedef enum {
+  UINTR_NONE = 0,
+  UINTR_RECEIVER = 1,
+  UINTR_SENDER = 2,
+  UINTR_BOTH = 3
+} uintr_role_t;
+
+// Unified process context
 typedef struct {
   struct task_struct *task;
-  void *handler;
+  uintr_role_t role;
+
+  // MSR snapshot for context switching
   struct uintr_state state;
+
+  // Receiver-specific state (only valid if role & UINTR_RECEIVER)
+  void *handler;
   struct uintr_upid *upid;
-  bool handler_active; // unused. may be useful for multiple handlers
-  bool uif;
+
+  // Sender-specific state (only valid if role & UINTR_SENDER)
+  struct uintr_uitt *uitt;
+
   spinlock_t ctx_lock;
 } uintr_process_ctx;
 

@@ -29,15 +29,6 @@ typedef struct {
   unsigned int flags;
 } _uintr_sender_args;
 
-struct _uintr_frame {
-  unsigned long rip;
-  unsigned long rflags;
-  unsigned long rsp;
-  unsigned long cs;
-  unsigned long ss;
-  unsigned long vector;
-};
-
 #define UINTR_REGISTER_HANDLER _IOW('u', 0, _uintr_handler_args)
 #define UINTR_UNREGISTER_HANDLER _IO('u', 1)
 #define UINTR_REGISTER_SENDER _IOW('u', 2, _uintr_sender_args)

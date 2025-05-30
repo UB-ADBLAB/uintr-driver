@@ -12,37 +12,29 @@
 #include <linux/slab.h>
 #include <linux/types.h>
 
-void uintr_restore_state(struct uintr_state *state) {
-  if (!state)
-    return;
-
-  wrmsrl(MSR_IA32_UINTR_HANDLER, state->handler);
-  wrmsrl(MSR_IA32_UINTR_STACKADJUST, state->stack_adjust);
-  wrmsrl(MSR_IA32_UINTR_MISC, *(u64 *)&state->misc);
-  wrmsrl(MSR_IA32_UINTR_PD, state->upid_addr);
-  wrmsrl(MSR_IA32_UINTR_TT, state->uitt_addr);
-  wrmsrl(MSR_IA32_UINTR_RR, state->uirr);
-}
-
 void uintr_clear_state(void *info) {
   u64 misc_val;
 
-  // First clear notification vector in MISC MSR to prevent new interrupts
-  // This register is finicky when setting values..
-  rdmsrl(MSR_IA32_UINTR_MISC, misc_val);
+  /* Clear notification vector in MISC MSR first */
+  if (rdmsrl_safe(MSR_IA32_UINTR_MISC, &misc_val)) {
+    pr_err("UINTR: Failed to read MISC MSR during clear_state\n");
+    return;
+  }
+
   misc_val &= ~(0xFFULL << 32); // Clear notification vector bits
   misc_val |= ((u64)IRQ_VEC_USER << 32);
-  wrmsrl(MSR_IA32_UINTR_MISC, misc_val);
 
-  wrmsrl(MSR_IA32_UINTR_HANDLER, 0);
-  wrmsrl(MSR_IA32_UINTR_STACKADJUST, 0);
-  wrmsrl(MSR_IA32_UINTR_PD, 0);
-  wrmsrl(MSR_IA32_UINTR_RR, 0);
+  if (wrmsrl_safe(MSR_IA32_UINTR_MISC, misc_val) ||
+      wrmsrl_safe(MSR_IA32_UINTR_HANDLER, 0) ||
+      wrmsrl_safe(MSR_IA32_UINTR_STACKADJUST, 0) ||
+      wrmsrl_safe(MSR_IA32_UINTR_PD, 0) || wrmsrl_safe(MSR_IA32_UINTR_RR, 0) ||
+      wrmsrl_safe(MSR_IA32_UINTR_TT, 0)) {
 
-  // we shouldn't need to clear the TT msr as the value should be consistent
-  // once the driver is loaded.
+    pr_err("UINTR: Failed to clear one or more UINTR MSRs\n");
+  }
 }
 
+// TODO: change from intel
 inline u32 cpu_to_ndst(int cpu) {
   u32 apicid;
 
@@ -75,30 +67,49 @@ int uintr_create_upid(uintr_process_ctx *ctx) {
   struct task_struct *task;
   struct uintr_upid *upid;
   int cpu;
-  if (!ctx)
+  u32 ndst;
+
+  if (!ctx) {
+    pr_err("UINTR: uintr_create_upid called with NULL context\n");
     return -EINVAL;
+  }
 
   task = ctx->task;
+  if (!task) {
+    pr_err("UINTR: Context has NULL task\n");
+    return -EINVAL;
+  }
 
   upid = kzalloc(sizeof(*upid), GFP_KERNEL);
-
-  memset(upid, 0, sizeof(*upid));
-
-  if (!upid)
+  if (!upid) {
+    pr_err("UINTR: Failed to allocate UPID for PID %d\n", task->pid);
     return -ENOMEM;
+  }
+
+  // Clear entire structure
+  memset(upid, 0, sizeof(*upid));
 
   ctx->upid = upid;
 
   cpu = task_cpu(task);
+  ndst = cpu_to_ndst(cpu);
 
-  // Initialize UPID
+  // verify APIC destination
+  if (ndst == BAD_APICID) {
+    pr_err("UINTR: Invalid APIC ID for CPU %d\n", cpu);
+    kfree(upid);
+    ctx->upid = NULL;
+    return -EINVAL;
+  }
+
+  // Initialize UPID fields
   ctx->upid->nc.status = 0;
   ctx->upid->puir = 0;
-  ctx->upid->nc.ndst = cpu_to_ndst(cpu);
+  ctx->upid->nc.ndst = ndst;
   ctx->upid->nc.nv = IRQ_VEC_USER;
 
   pr_debug("UINTR: Initialized UPID for process %d on CPU %d (APIC ID: %u)\n",
-           task->pid, task_cpu(task), ctx->upid->nc.ndst);
+           task->pid, cpu, ctx->upid->nc.ndst);
 
   return 0;
 }

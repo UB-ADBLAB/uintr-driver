@@ -1,4 +1,5 @@
 #include "proc.h"
+#include "asm.h"
 #include "inteldef.h"
 #include "logging/monitor.h"
 #include "mappings/proc_mapping.h"
@@ -7,14 +8,12 @@
 #include "uitt.h"
 #include <asm/apic.h>
 #include <asm/io.h>
-/*#include <linux/hashtable.h>*/
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 
-// TODO: this function should have better erroring. (?)
+// Create a new context for a process
 uintr_process_ctx *uintr_create_ctx(struct task_struct *task) {
   uintr_process_ctx *ctx;
-  int ret;
 
   if (!task) {
     pr_err("UINTR: Tried to create process context where task is NULL!");
@@ -29,50 +28,59 @@ uintr_process_ctx *uintr_create_ctx(struct task_struct *task) {
 
   spin_lock_init(&ctx->ctx_lock);
   ctx->task = task;
-  ctx->uif = false;
-  ctx->handler_active = false;
+  ctx->role = UINTR_NONE;
+
+  // Initialize receiver state
   ctx->handler = NULL;
+  ctx->upid = NULL;
 
-  ret = uintr_create_upid(ctx);
-  if (ret < 0) {
-    kfree(ctx);
-    return NULL;
-  }
+  // Initialize sender state
+  ctx->uitt = NULL;
 
+  // Clear MSR state
   memset(&ctx->state, 0, sizeof(struct uintr_state));
 
   return ctx;
 }
 
 void uintr_destroy_ctx(uintr_process_ctx *ctx) {
+  unsigned long flags;
+
   if (!ctx)
     return;
 
-  // Clear CPU state
-  preempt_disable();
-
+  /* CRITICAL: Disable interrupts and clear MSRs if this is the current process
+   */
   if (current->pid == ctx->task->pid) {
-    uintr_clear_state(NULL);
+    __clui(); /* Disable user interrupts first */
+    preempt_disable();
+    uintr_clear_state(NULL); /* Clear all MSRs */
+    preempt_enable();
   }
-  preempt_enable();
 
-  spin_lock(&ctx->ctx_lock);
+  spin_lock_irqsave(&ctx->ctx_lock, flags);
 
-  // Free UPID
+  /* Free receiver resources */
   if (ctx->upid) {
-    set_bit(UINTR_UPID_STATUS_SN,
-            (unsigned long *)&ctx->upid->nc
-                .status); // prevent other interrupts from posting
-
+    /* Set suppress notification bit to prevent further interrupts */
+    set_bit(UINTR_UPID_STATUS_SN, (unsigned long *)&ctx->upid->nc.status);
     smp_wmb();
 
     kfree(ctx->upid);
     ctx->upid = NULL;
   }
 
-  spin_unlock(&ctx->ctx_lock);
+  /* Free sender resources */
+  if (ctx->uitt) {
+    uitt_cleanup(ctx->uitt);
+    ctx->uitt = NULL;
+  }
 
-  // must also destroy all associated uitts
+  /* Clear handler pointer */
+  ctx->handler = NULL;
+  ctx->role = UINTR_NONE;
+
+  spin_unlock_irqrestore(&ctx->ctx_lock, flags);
 
   kfree(ctx);
 }

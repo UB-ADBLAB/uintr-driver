@@ -3,6 +3,8 @@
 
 #include <linux/types.h>
 
+void uintr_msr_set_misc(void *info);
+
 void set_cr4_uintr_bit(void *info);
 void clear_cr4_uintr_bit(void *info);
 

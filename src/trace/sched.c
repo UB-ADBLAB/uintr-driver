@@ -4,245 +4,231 @@
 #include "../logging/monitor.h"
 #include "../mappings/proc_mapping.h"
 #include "../msr.h"
+#include "../proc.h"
 #include "../state.h"
-#include "asm/paravirt.h"
-#include "linux/smp.h"
-#include <asm/apic.h>
-#include <asm/apicdef.h>
-#include <linux/hashtable.h>
+#include "../uitt.h"
+
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/tracepoint.h>
 #include <trace/events/sched.h>
 
-struct migration_info {
-  struct uintr_proc_mapping *map;
-  int dest_cpu;
-};
-
-/* Function to save CPU state (to be called on the source CPU) */
-static void save_cpu_state_fn(void *info) {
-  struct migration_info *mig_info = (struct migration_info *)info;
-
-  if (!mig_info || !mig_info->map) {
-    pr_warn("UINTR: save_cpu_state_fn called with bad args!\n");
+// saves state on a logical cpu
+static void uintr_state_save(uintr_process_ctx *ctx) {
+  if (!ctx)
     return;
-  }
 
-  if (mig_info->map->ctx) {
-    uintr_process_ctx *ctx = mig_info->map->ctx;
+  spin_lock(&ctx->ctx_lock);
 
-    if (!ctx->upid) {
-      pr_warn("UINTR: Process context has NULL UPID\n");
-      return;
-    }
+  // Save MSRs based on role
+  if (ctx->role & UINTR_RECEIVER) {
+    // Suppress further notifications
+    set_bit(UINTR_UPID_STATUS_SN, (unsigned long *)&ctx->upid->nc.status);
 
-    pr_info("UINTR: Saving CPU state for process %d, migrating to CPU %d\n",
-            ctx->task->pid, mig_info->dest_cpu);
+    // Save UIF state
+    ctx->state.misc.uif = __testui();
 
-    // update ndst to new cpu
-    ctx->upid->nc.ndst = cpu_to_ndst(mig_info->dest_cpu);
-    ctx->uif = _testui();
-
+    // Save receiver MSRs
     rdmsrl(MSR_IA32_UINTR_HANDLER, ctx->state.handler);
     rdmsrl(MSR_IA32_UINTR_STACKADJUST, ctx->state.stack_adjust);
-    rdmsrl(MSR_IA32_UINTR_MISC, *(u64 *)&ctx->state.misc);
     rdmsrl(MSR_IA32_UINTR_PD, ctx->state.upid_addr);
     rdmsrl(MSR_IA32_UINTR_RR, ctx->state.uirr);
-
-    // currently unused
-    rdmsrl(MSR_IA32_UINTR_TT, ctx->state.uitt_addr);
-    uintr_dump_upid_state(ctx->upid, "migration");
-    dump_uintr_msrs(NULL);
   }
+
+  if (ctx->role & UINTR_SENDER) {
+    // Save sender MSR
+    rdmsrl(MSR_IA32_UINTR_TT, ctx->state.uitt_addr);
+  }
+
+  spin_unlock(&ctx->ctx_lock);
 }
 
-/* Function to restore CPU state (to be called on the destination CPU) */
-static void restore_cpu_state_fn(void *info) {
-  struct uintr_proc_mapping *mapping = (struct uintr_proc_mapping *)info;
-
-  if (!mapping) {
-    pr_warn("UINTR: restore_cpu_state_fn called with bad args!\n");
+// restores state on a logical cpu
+static void uintr_state_restore(uintr_process_ctx *ctx) {
+  if (!ctx)
     return;
-  }
 
-  if (mapping->ctx) {
-    uintr_process_ctx *ctx = mapping->ctx;
+  spin_lock(&ctx->ctx_lock);
+
+  // Restore MSRs based on role
+  if (ctx->role & UINTR_RECEIVER) {
+    ctx->upid->nc.ndst = cpu_to_ndst(raw_smp_processor_id());
+    smp_wmb();
+
+    // Restore receiver MSRs
     wrmsrl(MSR_IA32_UINTR_HANDLER, ctx->state.handler);
     wrmsrl(MSR_IA32_UINTR_STACKADJUST, ctx->state.stack_adjust);
-    wrmsrl(MSR_IA32_UINTR_MISC, *(u64 *)&ctx->state.misc);
     wrmsrl(MSR_IA32_UINTR_PD, ctx->state.upid_addr);
     wrmsrl(MSR_IA32_UINTR_RR, ctx->state.uirr);
 
-    // Update UIF
-    if (ctx->uif) {
-      _stui();
-    } else {
-      _clui();
+    // Restore UIF state
+    if (ctx->state.misc.uif)
+      __stui();
+    else
+      __clui();
+
+    // Clear suppress notification bit
+    clear_bit(UINTR_UPID_STATUS_SN, (unsigned long *)&ctx->upid->nc.status);
+  }
+
+  if (ctx->role & UINTR_SENDER) {
+    // Restore sender MSR
+    wrmsrl(MSR_IA32_UINTR_TT, ctx->state.uitt_addr);
+  }
+
+  // MISC MSR is common to both roles.
+  uintr_msr_set_misc(NULL);
+
+  spin_unlock(&ctx->ctx_lock);
+}
+
+// ---------------------------------------------------------------------------
+// Tracepoint callbacks
+
+// sched_migrate_task – update NDST in UPID for receivers
+static void tp_sched_migrate_task_cb(void *ignore, struct task_struct *p,
+                                     int dest_cpu) {
+  uintr_process_ctx *ctx = find_process_ctx(p->pid);
+  if (ctx && (ctx->role & UINTR_RECEIVER) && ctx->upid) {
+    ctx->upid->nc.ndst = cpu_to_ndst(dest_cpu);
+  }
+}
+
+// sched_switch – save prev, restore next
+static void tp_sched_switch_cb(void *ignore, bool preempt,
+                               struct task_struct *prev,
+                               struct task_struct *next) {
+  uintr_process_ctx *ctx;
+
+  // Save state for prev task
+  if (prev) {
+    ctx = find_process_ctx(prev->pid);
+    if (ctx) {
+      uintr_state_save(ctx);
     }
   }
 
-  if (mapping->uitt) {
-    wrmsrl(MSR_IA32_UINTR_TT, (u64)mapping->uitt->entries | 1);
+  // Restore state for next task
+  if (next) {
+    ctx = find_process_ctx(next->pid);
+    if (ctx) {
+      uintr_state_restore(ctx);
+    }
   }
 }
 
-static void tracepoint_find(struct tracepoint *tp, void *priv);
-
-static void uintr_trace_sched_switch(void *data, bool preempt,
-                                     struct task_struct *prev,
-                                     struct task_struct *next) {
-  /*
-   * When a task switch occurs, check if the next task needs UINTR state updated
-   * on the current CPU
-   */
-  // uintr_update_cpu_state(next);
-}
-
-/* Tracepoint handler for sched_migrate_task */
-static void uintr_trace_sched_migrate_task(void *data, struct task_struct *p,
-                                           int dest_cpu) {
-  struct uintr_proc_mapping *mapping;
-  int source_cpu;
-  pid_t pid = p->pid;
-
-  mapping = find_proc_mapping(pid);
-  if (!mapping) {
-    return; // process is not a pid we are tracking, ignore
-  }
-
-  struct migration_info *info = kmalloc(sizeof(*info), GFP_ATOMIC);
-  if (!info) {
-    pr_err("UINTR: Failed to allocate migration info\n");
+// sched_process_exit – final cleanup
+static void tp_sched_process_exit_cb(void *ignore, struct task_struct *p) {
+  uintr_process_ctx *ctx = find_process_ctx(p->pid);
+  if (!ctx)
     return;
+
+  // Save state one last time
+  uintr_state_save(ctx);
+
+  // Clear MSRs
+  uintr_clear_state(NULL);
+
+  // Clean up based on role
+  if (ctx->role & UINTR_RECEIVER) {
+    // UPID cleanup is handled in uintr_destroy_ctx
   }
 
-  info->dest_cpu = dest_cpu;
-  info->map = mapping;
-
-  source_cpu = task_cpu(p);
-
-  /*Must save CPU state here and then reload on the new cpu.*/
-  smp_call_function_single(source_cpu, save_cpu_state_fn, info, 1);
-
-  pr_info("UINTR: Tracked process %d migrated from CPU %d to CPU %d\n", pid,
-          source_cpu, dest_cpu);
-
-  // restore state on our dest_cpu
-  if (smp_processor_id() == dest_cpu) {
-    // If we're on the destination CPU, call the function directly
-    restore_cpu_state_fn(mapping);
-  } else {
-    // Otherwise, use smp_call_function_single
-    smp_call_function_single(dest_cpu, restore_cpu_state_fn, mapping, 1);
+  if (ctx->role & UINTR_SENDER) {
+    if (ctx->uitt) {
+      uitt_cleanup(ctx->uitt);
+      ctx->uitt = NULL;
+    }
   }
 
-  kfree(info);
-
-  pr_info("UINTR: State restored for PID %d to CPU %d\n", pid, dest_cpu);
+  // Remove from process mapping and destroy context
+  remove_process_mapping(p->pid);
+  uintr_destroy_ctx(ctx);
 }
 
-/* The tracepoint symbols */
+// ---------------------------------------------------------------------------
+// Tracepoint plumbing & initalization
+
 static struct tracepoint *tp_sched_migrate_task;
 static struct tracepoint *tp_sched_switch;
+static struct tracepoint *tp_sched_process_exit;
 
-/* Callback for for_each_kernel_tracepoint */
-static void tracepoint_find(struct tracepoint *tp, void *priv) {
-  const char *tp_name = priv;
-
-  if (!strcmp(tp->name, tp_name)) {
-    if (!strcmp(tp_name, "sched_migrate_task"))
+static void find_tracepoint(struct tracepoint *tp, void *priv) {
+  const char *name = priv;
+  if (!strcmp(tp->name, name)) {
+    if (!strcmp(name, "sched_migrate_task"))
       tp_sched_migrate_task = tp;
-    else if (!strcmp(tp_name, "sched_switch"))
+    else if (!strcmp(name, "sched_switch"))
       tp_sched_switch = tp;
+    else if (!strcmp(name, "sched_process_exit"))
+      tp_sched_process_exit = tp;
   }
 }
 
-/* Find the sched_migrate_task tracepoint */
-static int find_sched_tracepoints(void) {
-  /* Reset the global tracepoint pointer */
+static int locate_tracepoints(void) {
   tp_sched_migrate_task = NULL;
   tp_sched_switch = NULL;
+  tp_sched_process_exit = NULL;
 
-  /* Attempt to locate migrate tracepoint */
-  for_each_kernel_tracepoint(tracepoint_find, (void *)"sched_migrate_task");
-  if (!tp_sched_migrate_task) {
-    pr_err("UINTR: Failed to find sched_migrate_task tracepoint\n");
+  for_each_kernel_tracepoint(find_tracepoint, (void *)"sched_migrate_task");
+  for_each_kernel_tracepoint(find_tracepoint, (void *)"sched_switch");
+  for_each_kernel_tracepoint(find_tracepoint, (void *)"sched_process_exit");
+
+  if (!tp_sched_migrate_task || !tp_sched_switch || !tp_sched_process_exit) {
+    pr_err("UINTR: required scheduler tracepoints not found\n");
     return -EINVAL;
   }
-
-  /* Attempt to locate switch tracepoint */
-  for_each_kernel_tracepoint(tracepoint_find, (void *)"sched_switch");
-  if (!tp_sched_switch) {
-    pr_err("UINTR: Failed to find sched_switch tracepoint\n");
-    return -EINVAL;
-  }
-
-  pr_info("UINTR: Found tracepoints \n");
   return 0;
 }
 
-static int register_sched_tracepoints(void) {
-  int ret;
-
-  /* First find the tracepoints */
-  ret = find_sched_tracepoints();
+static int register_tracepoints(void) {
+  int ret = locate_tracepoints();
   if (ret)
     return ret;
 
-  /* Register our probes with the tracepoints */
   ret = tracepoint_probe_register(tp_sched_migrate_task,
-                                  uintr_trace_sched_migrate_task, NULL);
+                                  tp_sched_migrate_task_cb, NULL);
+  if (ret)
+    return ret;
+
+  ret = tracepoint_probe_register(tp_sched_switch, tp_sched_switch_cb, NULL);
   if (ret) {
-    pr_err("UINTR: Failed to register sched_migrate_task tracepoint\n");
+    tracepoint_probe_unregister(tp_sched_migrate_task, tp_sched_migrate_task_cb,
+                                NULL);
     return ret;
   }
 
-  ret = tracepoint_probe_register(tp_sched_switch, uintr_trace_sched_switch,
-                                  NULL);
+  ret = tracepoint_probe_register(tp_sched_process_exit,
+                                  tp_sched_process_exit_cb, NULL);
   if (ret) {
-    tracepoint_probe_unregister(tp_sched_migrate_task,
-                                uintr_trace_sched_migrate_task, NULL);
-    pr_err("UINTR: Failed to register sched_switch tracepoint\n");
-    return ret;
+    tracepoint_probe_unregister(tp_sched_switch, tp_sched_switch_cb, NULL);
+    tracepoint_probe_unregister(tp_sched_migrate_task, tp_sched_migrate_task_cb,
+                                NULL);
   }
-
-  return 0;
+  return ret;
 }
 
-/* Tracepoint probe unregistration function */
-static void unregister_sched_tracepoints(void) {
-  if (tp_sched_migrate_task) {
-    tracepoint_probe_unregister(tp_sched_migrate_task,
-                                uintr_trace_sched_migrate_task, NULL);
-    tp_sched_migrate_task = NULL;
-  }
-
-  if (tp_sched_switch) {
-    tracepoint_probe_unregister(tp_sched_switch, uintr_trace_sched_switch,
+static void unregister_tracepoints(void) {
+  if (tp_sched_process_exit)
+    tracepoint_probe_unregister(tp_sched_process_exit, tp_sched_process_exit_cb,
                                 NULL);
-    tp_sched_switch = NULL;
-  }
+  if (tp_sched_switch)
+    tracepoint_probe_unregister(tp_sched_switch, tp_sched_switch_cb, NULL);
+  if (tp_sched_migrate_task)
+    tracepoint_probe_unregister(tp_sched_migrate_task, tp_sched_migrate_task_cb,
+                                NULL);
 }
 
 int uintr_sched_trace_init(void) {
-  int ret;
-
-  /* Register tracepoints */
-  ret = register_sched_tracepoints();
-  if (ret)
-    return ret;
-
-  pr_info("UINTR: Scheduler tracing initialized\n");
-  return 0;
+  int ret = register_tracepoints();
+  if (!ret)
+    pr_info("UINTR: Scheduler tracing initialized\n");
+  return ret;
 }
 
 void uintr_sched_trace_cleanup(void) {
-  /* Unregister tracepoints */
-  unregister_sched_tracepoints();
-
+  unregister_tracepoints();
   proc_mapping_cleanup();
-
   pr_info("UINTR: Scheduler tracing cleaned up\n");
 }
