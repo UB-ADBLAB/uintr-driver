@@ -11,9 +11,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <unistd.h>
-#include <x86intrin.h>
-
-/* volatile because value will change when interrupted */
+#include <x86intrin.h> /* volatile because value will change when interrupted */
 static volatile int interrupt_received = 0;
 static volatile sig_atomic_t keep_running = 1;
 
@@ -24,7 +22,7 @@ static void cleanup(void) {
   printf("\nCleaning up...\n");
 
   /* Disable interrupts before cleanup */
-  _clui();
+  __clui();
 
   if (handler_stack) {
     free(handler_stack);
@@ -34,7 +32,7 @@ static void cleanup(void) {
 
 /* Handler for user interrupts */
 void __attribute__((target("uintr"), interrupt))
-test_handler(struct __uintr_frame *ui_frame, unsigned long long vector) {
+test_handler(struct _uintr_frame *ui_frame, unsigned long long vector) {
   interrupt_received++;
 }
 
@@ -58,7 +56,7 @@ void *sender_thread(void *arg) {
   sleep(3);
 
   printf("Sending user interrupt...\n");
-  _senduipi(idx);
+  __senduipi(idx);
   printf("User interrupt sent...\n");
 
   uintr_unregister_sender(idx);
@@ -82,6 +80,7 @@ int main(void) {
     perror("Failed to allocate handler stack");
     return EXIT_FAILURE;
   }
+  __stui();
   printf("Allocated handler stack at %p with size %d bytes\n", handler_stack,
          HANDLER_STACK_SIZE);
 
@@ -90,14 +89,14 @@ int main(void) {
                                        HANDLER_STACK_SIZE, 0);
 
   // Enable user interrupts
-  printf("Current UIF before stui: %u\n", _testui());
-  _stui();
-  if (!_testui()) {
-    printf("[ERROR] UIF not set after _stui()!\n");
+  printf("Current UIF before stui: %u\n", __testui());
+  __stui();
+  if (!__testui()) {
+    printf("[ERROR] UIF not set after __stui()!\n");
     cleanup();
     return EXIT_FAILURE;
   }
-  printf("UIF set successfully. UIF after stui: %u\n", _testui());
+  printf("UIF set successfully. UIF after stui: %u\n", __testui());
 
   ret = pthread_create(&sender1, NULL, sender_thread, &receiver_id);
   if (ret != 0) {
@@ -111,6 +110,7 @@ int main(void) {
   sleep(3);
   cpu = sched_getcpu();
   printf("Main thread migrated to core: %d\n", cpu);
+  __stui();
   printf("Waiting for interrupt...\n");
 
   while (!interrupt_received && keep_running) {
@@ -118,6 +118,7 @@ int main(void) {
 
   if (!keep_running) {
     printf("Interrupted by user\n");
+    uintr_debug();
     return EXIT_SUCCESS;
   }
 
@@ -127,7 +128,7 @@ int main(void) {
   ret = EXIT_SUCCESS;
 
   // clean up
-  _clui();
+  __clui();
 
   uintr_unregister_handler(receiver_id);
 

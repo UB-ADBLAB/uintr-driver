@@ -1,62 +1,168 @@
 #include "uitt.h"
 #include "asm/paravirt.h"
 #include "common.h"
-#include "irq.h"
+#include "inteldef.h"
 #include "logging/monitor.h"
 #include "mappings/id_mapping.h"
 #include "mappings/proc_mapping.h"
 #include "msr.h"
+#include "proc.h"
 #include <asm/io.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 
 extern u32 uintr_max_uitt_entries;
 
-int unregister_sender(int idx) {
-  pr_debug("UINTR: Freeing ipi_idx %d for PID: %d\n", idx, current->pid);
+int register_sender(uintr_receiver_id_t receiver_id, int vector) {
+  uintr_process_ctx *receiver_ctx;
+  uintr_process_ctx *sender_ctx;
+  struct uintr_uitt *uitt = NULL;
+  unsigned long flags;
+  int ret;
 
-  struct uintr_proc_mapping *map = find_proc_mapping(current->pid);
-  if (!map) {
-    pr_warn("UINTR: No mapping found for PID %d\n", current->pid);
+  // Get the receiver context based off the receiver_id
+  receiver_ctx = find_process_ctx_by_id(receiver_id);
+  if (!receiver_ctx) {
+    pr_err("UINTR: Failed to find CTX for receiver ID %llu\n", receiver_id);
+    return -1;
+  }
+
+  if (!(receiver_ctx->role & UINTR_RECEIVER)) {
+    pr_err("UINTR: Target context is not a receiver\n");
     return -EINVAL;
   }
 
-  if (!map->uitt) {
-    pr_warn("UINTR: No UITT found for PID %d\n", current->pid);
+  uintr_dump_upid_state(receiver_ctx->upid, "register_sender");
+
+  // Find or create sender context
+  sender_ctx = find_process_ctx(current->pid);
+  if (!sender_ctx) {
+    sender_ctx = uintr_create_ctx(current);
+    if (!sender_ctx)
+      return -ENOMEM;
+
+    // Add to process mapping
+    ret = add_process_mapping(current->pid, sender_ctx);
+    if (ret < 0) {
+      uintr_destroy_ctx(sender_ctx);
+      return ret;
+    }
+  }
+
+  spin_lock_irqsave(&sender_ctx->ctx_lock, flags);
+
+  // Update role
+  sender_ctx->role |= UINTR_SENDER;
+
+  if (!sender_ctx->uitt) {
+    // First time registering as sender, init the UITT
+    uitt = uitt_init(current);
+    if (!uitt) {
+      spin_unlock_irqrestore(&sender_ctx->ctx_lock, flags);
+      pr_err("UINTR: Failed to initialize UITT for PID %d\n", current->pid);
+      if (sender_ctx->role == UINTR_SENDER) {
+        // If this was the only role, remove the context
+        remove_process_mapping(current->pid);
+        uintr_destroy_ctx(sender_ctx);
+      }
+      return -ENOMEM;
+    }
+    sender_ctx->uitt = uitt;
+
+    // Update state with UITT address
+    sender_ctx->state.uitt_addr = (u64)uitt->entries | 1;
+  } else {
+    uitt = sender_ctx->uitt;
+  }
+
+  spin_unlock_irqrestore(&sender_ctx->ctx_lock, flags);
+
+  // Create the entry which will be placed in the UITT
+  struct uintr_uitt_entry entry = {
+      .valid = 1,
+      .user_vec = vector,
+      .target_upid_addr = (u64)receiver_ctx->upid,
+  };
+
+  // Find the index to insert the entry
+  int idx = uitt_find_empty_idx(uitt);
+  if (idx < 0) {
+    return -1;
+  }
+
+  // Insert the entry into the UITT
+  uitt->entries[idx] = entry;
+
+  dump_uintr_msrs(NULL);
+
+  return idx;
+}
+
+int unregister_sender(int idx) {
+  uintr_process_ctx *ctx;
+  unsigned long flags;
+
+  pr_debug("UINTR: Freeing ipi_idx %d for PID: %d\n", idx, current->pid);
+
+  ctx = find_process_ctx(current->pid);
+  if (!ctx) {
+    pr_warn("UINTR: No context found for PID %d\n", current->pid);
+    return -EINVAL;
+  }
+
+  if (!(ctx->role & UINTR_SENDER) || !ctx->uitt) {
+    pr_warn("UINTR: Process is not a sender or has no UITT\n");
     return -EINVAL;
   }
 
   // Validate index
-  if (idx < 0 || idx >= map->uitt->size) {
-    pr_warn("UINTR: Invalid index %d (size: %u)\n", idx, map->uitt->size);
+  if (idx < 0 || idx >= ctx->uitt->size) {
+    pr_warn("UINTR: Invalid index %d (size: %u)\n", idx, ctx->uitt->size);
     return -EINVAL;
   }
 
   pr_debug(
       "UINTR: Entry[%d] before: valid=%u, vector=0x%x, target_upid=0x%llx\n",
-      idx, map->uitt->entries[idx].valid, map->uitt->entries[idx].user_vec,
-      map->uitt->entries[idx].target_upid_addr);
+      idx, ctx->uitt->entries[idx].valid, ctx->uitt->entries[idx].user_vec,
+      ctx->uitt->entries[idx].target_upid_addr);
 
   // Mark the entry as invalid
-  map->uitt->entries[idx].valid = 0;
+  ctx->uitt->entries[idx].valid = 0;
 
   // Verify that we've actually cleared it
   pr_debug("UINTR: Entry[%d] after: valid=%u\n", idx,
-           map->uitt->entries[idx].valid);
+           ctx->uitt->entries[idx].valid);
 
   // Ensure memory operations
   smp_wmb();
 
   // Check if this was the last entry
-  if (is_uitt_empty(map->uitt)) {
+  if (is_uitt_empty(ctx->uitt)) {
     pr_debug("UINTR: All entries freed, cleaning up UITT for PID: %d\n",
              current->pid);
 
-    // Free the entries and UITT
-    uitt_cleanup(map->uitt);
+    spin_lock_irqsave(&ctx->ctx_lock, flags);
 
-    // Update mapping
-    map->uitt = NULL;
+    // Free the UITT
+    uitt_cleanup(ctx->uitt);
+    ctx->uitt = NULL;
+
+    // Update role
+    ctx->role &= ~UINTR_SENDER;
+
+    // Clear UITT MSR if this is the current process
+    if (current->pid == ctx->task->pid) {
+      wrmsrl(MSR_IA32_UINTR_TT, 0);
+    }
+
+    spin_unlock_irqrestore(&ctx->ctx_lock, flags);
+
+    // If process has no more roles, clean up completely
+    if (ctx->role == UINTR_NONE) {
+      pr_debug("UINTR: Process has no more roles, cleaning up completely\n");
+      remove_process_mapping(ctx->task->pid);
+      uintr_destroy_ctx(ctx);
+    }
   }
 
   return 0;
@@ -71,66 +177,9 @@ bool is_uitt_empty(struct uintr_uitt *uitt) {
   return true;
 }
 
-int register_sender(uintr_receiver_id_t receiver_id, int vector) {
-  uintr_process_ctx *ctx;
-  struct uintr_uitt *uitt = NULL;
-  struct uintr_proc_mapping *map;
-
-  // get the process context based off the receiver_id
-  // we need the ctx to find the upid address which is required in the
-  // uitt_entry we are about to create
-  ctx = find_process_ctx_by_id(receiver_id);
-
-  if (!ctx) {
-    pr_err("UINTR: Failed to find CTX for receiver ID %llu\n", receiver_id);
-    return -1;
-  }
-
-  uintr_dump_upid_state(ctx->upid, "register_sender");
-
-  // must look up the target uitt where we are placing the entry
-  map = find_proc_mapping(current->pid);
-
-  if (map && map->uitt) {
-    uitt = map->uitt;
-  } else {
-    // if it doesn't exist, it means this is the first time we are registering a
-    // sender from this task, meaning we must init the uitt before adding the
-    // entry.
-    uitt = uitt_init(current);
-    if (!uitt) {
-      pr_err("UINTR: Failed to initialzie UITT for PID %d\n", current->pid);
-      return -ENOMEM;
-    }
-  }
-
-  // create the entry which will be placed in the uitt
-  struct uintr_uitt_entry entry = {
-      .valid = 1,
-      .user_vec = vector,
-      .target_upid_addr = (u64)ctx->upid,
-  };
-
-  // find the index to insert the entry
-  int idx = uitt_find_empty_idx(uitt);
-
-  if (idx < 0) {
-    return -1;
-  }
-
-  // insert the entry into the uitt
-  uitt->entries[idx] = entry;
-
-  dump_uintr_msrs(NULL);
-
-  return idx;
-}
-
 uintr_receiver_id_t generate_receiver_id(uintr_process_ctx *ctx) {
-
   // TODO: add random bits + PID?
   uintr_receiver_id_t id = (uintr_receiver_id_t)ctx->task->pid;
-
   return id;
 }
 
@@ -140,7 +189,6 @@ int uitt_find_empty_idx(struct uintr_uitt *uitt) {
       return i;
     }
   }
-
   return -1;
 }
 
@@ -148,7 +196,6 @@ struct uintr_uitt *uitt_init(struct task_struct *task) {
   size_t uitt_size;
   struct uintr_uitt_entry *uitt_base;
   struct uintr_uitt *uitt;
-  int ret;
 
   uintr_max_uitt_entries = 64;
   uitt_size = uintr_max_uitt_entries * sizeof(struct uintr_uitt_entry);
@@ -176,15 +223,12 @@ struct uintr_uitt *uitt_init(struct task_struct *task) {
   pr_debug("UINTR: UITT created for PID: %d at 0x%px\n", task->pid, uitt);
   pr_debug("UINTR: UITT aligned to %lu bytes\n", PAGE_SIZE);
 
-  add_proc_sender_mapping(task->pid, uitt);
-  if (ret < 0) {
-    pr_err("UINTR: Failed to add sender mapping for PID %d\n", task->pid);
-    free_pages((unsigned long)uitt_base, get_order(uitt_size));
-    kfree(uitt);
-    return ERR_PTR(ret);
-  }
+  uintr_msr_set_misc(NULL);
 
+  // Enable UITT
   wrmsrl(MSR_IA32_UINTR_TT, (u64)uitt->entries | 1);
+
+  smp_wmb();
 
   return uitt;
 }

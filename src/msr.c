@@ -1,9 +1,23 @@
 #include "msr.h"
+#include "asm.h"
 #include "inteldef.h"
+#include "irq.h"
 #include <asm/msr.h>
 #include <asm/tlbflush.h>
 #include <linux/kernel.h>
 #include <linux/types.h>
+
+void uintr_msr_set_misc(void *info) {
+  u64 misc_val;
+
+  // Configure MISC MSR for sender
+  rdmsrl(MSR_IA32_UINTR_MISC, misc_val);
+  misc_val &= ~GENMASK_ULL(39, 32);
+  misc_val &= ~GENMASK_ULL(31, 0);
+  misc_val |= ((u64)IRQ_VEC_USER << 32);
+  misc_val |= (u64)(UINTR_MAX_UVEC_NR - 1);
+  wrmsrl(MSR_IA32_UINTR_MISC, misc_val);
+}
 
 void set_cr4_uintr_bit(void *info) {
   unsigned long cr4 = __read_cr4();
@@ -52,4 +66,5 @@ void dump_uintr_msrs(void *info) {
   pr_debug("  TT: 0x%llx (base: 0x%llx, enabled: %lld)\n", tt_val,
            tt_val & ~0xFFF, tt_val & 0x1);
   pr_debug("  RR: 0x%llx\n", rr_val);
+  pr_debug("  UIF: 0x%x\n", __testui());
 }

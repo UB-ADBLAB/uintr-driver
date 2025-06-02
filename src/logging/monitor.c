@@ -33,7 +33,5 @@ char *get_status_str(u8 status) {
     return "BLKD";
   if (status & (1 << UINTR_UPID_STATUS_SN))
     return "SN";
-  if (status & (1 << UINTR_UPID_STATUS_ON))
-    return "ON";
-  return "OFF";
+  return "ON";
 }

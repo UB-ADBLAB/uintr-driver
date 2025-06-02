@@ -9,17 +9,17 @@
  */
 
 /* Set User Interrupt Flag - enables user interrupts */
-static __always_inline void _stui(void) {
+static __always_inline void __stui(void) {
   __asm__ __volatile__("stui" : : : "memory");
 }
 
 /* Clear User Interrupt Flag - disables user interrupts */
-static __always_inline void _clui(void) {
+static __always_inline void __clui(void) {
   __asm__ __volatile__("clui" : : : "memory");
 }
 
 /* Determine User Interrupt Flag - returns current UIF value */
-static __always_inline unsigned char _testui(void) {
+static __always_inline unsigned char __testui(void) {
   unsigned char cf;
   __asm__ __volatile__("testui" : "=@ccb"(cf) : : "cc");
   return cf;

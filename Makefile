@@ -73,7 +73,6 @@ load: module
 # Build all test executables
 tests: library $(TEST_BINS)
 
-# Individual test shortcuts
 test: pinned
 
 test_migration: migration
