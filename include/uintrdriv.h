@@ -1,6 +1,10 @@
 #ifndef _UAPI_ASM_X86_UINTR_H
 #define _UAPI_ASM_X86_UINTR_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <fcntl.h>
 #include <linux/types.h>
 #include <stddef.h>
@@ -134,6 +138,10 @@ static __always_inline void __uiret(void) {
   __asm__ __volatile__("uiret" : : : "memory");
 }
 
+#endif
+
+#ifdef __cplusplus
+}  /* extern "C" */
 #endif
 
 #endif

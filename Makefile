@@ -66,6 +66,9 @@ load: module
 	sudo insmod intel-uintr.ko
 	sudo chmod 666 /dev/uintr
 
+unload:
+	sudo rmmod intel_uintr
+
 # Generic test target
 %: tests/%.c
 	$(CC) $(TEST_FLAGS) $< -o $@ -L$(PWD) -luintrdriv
