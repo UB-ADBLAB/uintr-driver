@@ -51,4 +51,7 @@ sudo ldconfig
 
 # Load the kernel module
 sudo make load
+
+# Unload the kernel module
+sudo make unload
 ```
