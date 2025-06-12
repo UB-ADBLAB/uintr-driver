@@ -22,7 +22,7 @@ static void cleanup(void) {
   printf("\nCleaning up...\n");
 
   /* Disable interrupts before cleanup */
-  __clui();
+  _clui();
 
   if (handler_stack) {
     free(handler_stack);
@@ -32,7 +32,7 @@ static void cleanup(void) {
 
 /* Handler for user interrupts */
 void __attribute__((target("uintr"), interrupt))
-test_handler(struct _uintr_frame *ui_frame, unsigned long long vector) {
+test_handler(struct __uintr_frame *ui_frame, unsigned long long vector) {
   interrupt_received++;
 }
 
@@ -56,7 +56,7 @@ void *sender_thread(void *arg) {
   sleep(3);
 
   printf("Sending user interrupt...\n");
-  __senduipi(idx);
+  _senduipi(idx);
   printf("User interrupt sent...\n");
 
   uintr_unregister_sender(idx);
@@ -80,7 +80,7 @@ int main(void) {
     perror("Failed to allocate handler stack");
     return EXIT_FAILURE;
   }
-  __stui();
+  _stui();
   printf("Allocated handler stack at %p with size %d bytes\n", handler_stack,
          HANDLER_STACK_SIZE);
 
@@ -89,14 +89,14 @@ int main(void) {
                                        HANDLER_STACK_SIZE, 0);
 
   // Enable user interrupts
-  printf("Current UIF before stui: %u\n", __testui());
-  __stui();
-  if (!__testui()) {
-    printf("[ERROR] UIF not set after __stui()!\n");
+  printf("Current UIF before stui: %u\n", _testui());
+  _stui();
+  if (!_testui()) {
+    printf("[ERROR] UIF not set after _stui()!\n");
     cleanup();
     return EXIT_FAILURE;
   }
-  printf("UIF set successfully. UIF after stui: %u\n", __testui());
+  printf("UIF set successfully. UIF after stui: %u\n", _testui());
 
   ret = pthread_create(&sender1, NULL, sender_thread, &receiver_id);
   if (ret != 0) {
@@ -110,7 +110,7 @@ int main(void) {
   sleep(3);
   cpu = sched_getcpu();
   printf("Main thread migrated to core: %d\n", cpu);
-  __stui();
+  _stui();
   printf("Waiting for interrupt...\n");
 
   while (!interrupt_received && keep_running) {
@@ -128,7 +128,7 @@ int main(void) {
   ret = EXIT_SUCCESS;
 
   // clean up
-  __clui();
+  _clui();
 
   uintr_unregister_handler(receiver_id);
 
