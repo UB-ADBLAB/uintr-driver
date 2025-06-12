@@ -100,15 +100,15 @@ int uintr_debug(void);
 
 #if defined(__has_include)
 
-#if (defined(__GNUC__) && (__GNUC__ > 12)) ||                                  \
-    (defined(__clang__) && (__clang_major__ < 12))
-
-/*
-#if !defined(_UINTRNTRIN_H_INCLUDED) &&                                        \
-    !defined(__UINTRINTRIN_H) // TODO: not ideal?
-                              */
+#if !defined(__GNUC__) && !defined(__clang__)
+# error "uintrdriv.h requires GCC or clang"
+#endif
 
 #ifndef __ASSEMBLY__
+
+// very old gcc & clang that do not have the uintrintrin.h
+#if (defined(__GNUC__) && (__GNUC__ < 11)) ||                                  \
+    (defined(__clang__) && (__clang_major__ < 12))
 
 /* --- Intrinsics ---
  *
@@ -151,10 +151,16 @@ static __always_inline void _uiret(void) {
   __asm__ __volatile__("uiret" : : : "memory");
 }
 
-#endif // asm
+#else // GCC >= 11 || clang >= 12
+# include <x86intrin.h>
+# include <uintrintrin.h> // GCC 13 shipped with Ubuntu does not include
+                          // this header by default
+
 #endif
 
-#endif // if not defined by clang/gcc
+#endif // __ASSEMBLY__
+
+#endif // __has_include
 
 #ifdef __cplusplus
 } /* extern "C" */
