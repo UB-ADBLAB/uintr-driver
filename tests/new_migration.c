@@ -21,12 +21,12 @@ static void cleanup(void) {
   printf("\nCleaning up...\n");
 
   /* Disable interrupts before cleanup */
-  __clui();
+  _clui();
 }
 
 /* Handler for user interrupts */
 void __attribute__((target("uintr"), interrupt))
-test_handler(struct _uintr_frame *ui_frame, unsigned long long vector) {
+test_handler(struct __uintr_frame *ui_frame, unsigned long long vector) {
   interrupt_received = 1;
 }
 
@@ -69,7 +69,7 @@ void *sender_thread(void *arg) {
   sleep(10);
 
   printf("Sending user interrupt...\n");
-  __senduipi(idx);
+  _senduipi(idx);
   printf("User interrupt sent...\n");
 
   uintr_unregister_sender(idx);
@@ -96,14 +96,14 @@ int main(void) {
   receiver_id = uintr_register_handler(test_handler, NULL, 0, 0);
 
   // Enable user interrupts
-  printf("Current UIF before stui: %u\n", __testui());
-  __stui();
-  if (!__testui()) {
-    printf("[ERROR] UIF not set after __stui()!\n");
+  printf("Current UIF before stui: %u\n", _testui());
+  _stui();
+  if (!_testui()) {
+    printf("[ERROR] UIF not set after _stui()!\n");
     cleanup();
     return EXIT_FAILURE;
   }
-  printf("UIF set successfully. UIF after stui: %u\n", __testui());
+  printf("UIF set successfully. UIF after stui: %u\n", _testui());
 
   ret = pthread_create(&sender_tid, NULL, sender_thread, &receiver_id);
   if (ret != 0) {
@@ -134,7 +134,7 @@ int main(void) {
   ret = EXIT_SUCCESS;
 
 cleanup:
-  __clui();
+  _clui();
 
   if (receiver_id) {
     uintr_unregister_handler(receiver_id);

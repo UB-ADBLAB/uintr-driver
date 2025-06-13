@@ -29,12 +29,6 @@ typedef struct {
   unsigned int flags;
 } _uintr_sender_args;
 
-struct _uintr_frame {
-  unsigned long long rip;
-  unsigned long long rflags;
-  unsigned long long rsp;
-};
-
 #define UINTR_REGISTER_HANDLER _IOW('u', 0, _uintr_handler_args)
 #define UINTR_UNREGISTER_HANDLER _IO('u', 1)
 #define UINTR_REGISTER_SENDER _IOW('u', 2, _uintr_sender_args)
@@ -102,26 +96,45 @@ int uintr_unregister_sender(int idx);
 
 int uintr_debug(void);
 
+/*-------------------GCC-------------------------CLANG------------------------*/
+
+#if defined(__has_include)
+
+#if !defined(__GNUC__) && !defined(__clang__)
+# error "uintrdriv.h requires GCC or clang"
+#endif
+
+#ifndef __ASSEMBLY__
+
+// very old gcc & clang that do not have the uintrintrin.h
+#if (defined(__GNUC__) && (__GNUC__ < 11)) ||                                  \
+    (defined(__clang__) && (__clang_major__ < 12))
+
 /* --- Intrinsics ---
  *
  * the following intrinsics map directly to the instructions specified in the
  * Intel SDM Vol. 2B 4-616.
  */
 
-#ifndef __ASSEMBLY__
+/* */
+struct __uintr_frame {
+  unsigned long long rip;
+  unsigned long long rflags;
+  unsigned long long rsp;
+};
 
 /* Set User Interrupt Flag - enables user interrupts */
-static __always_inline void __stui(void) {
+static __always_inline void _stui(void) {
   __asm__ __volatile__("stui" : : : "memory");
 }
 
 /* Clear User Interrupt Flag - disables user interrupts */
-static __always_inline void __clui(void) {
+static __always_inline void _clui(void) {
   __asm__ __volatile__("clui" : : : "memory");
 }
 
 /* Determine User Interrupt Flag - returns current UIF value */
-static __always_inline unsigned char __testui(void) {
+static __always_inline unsigned char _testui(void) {
   unsigned char cf;
   __asm__ __volatile__("testui" : "=@ccb"(cf) : : "cc");
   return cf;
@@ -129,19 +142,28 @@ static __always_inline unsigned char __testui(void) {
 
 /* Send User Interrupt - sends a user interrupt to the index set in the register
  */
-static __always_inline void __senduipi(unsigned long uipi_index) {
+static __always_inline void _senduipi(unsigned long uipi_index) {
   __asm__ __volatile__("senduipi %0" : : "r"(uipi_index) : "memory");
 }
 
 /* Return from user interrupt handler */
-static __always_inline void __uiret(void) {
+static __always_inline void _uiret(void) {
   __asm__ __volatile__("uiret" : : : "memory");
 }
 
+#else // GCC >= 11 || clang >= 12
+# include <x86intrin.h>
+# include <uintrintrin.h> // GCC 13 shipped with Ubuntu does not include
+                          // this header by default
+
 #endif
+
+#endif // __ASSEMBLY__
+
+#endif // __has_include
 
 #ifdef __cplusplus
-}  /* extern "C" */
+} /* extern "C" */
 #endif
 
-#endif
+#endif // _UAPI_ASM_X86_UINTR_H
